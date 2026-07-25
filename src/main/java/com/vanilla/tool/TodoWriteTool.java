@@ -21,6 +21,10 @@ public class TodoWriteTool implements Tool {
 
     private static List<Todo> todos = new ArrayList<>();
 
+    public static List<Todo> getTodos() {
+        return todos;
+    }
+
     @Override
     public ToolSpecification getSpecification() {
         // items：单条任务

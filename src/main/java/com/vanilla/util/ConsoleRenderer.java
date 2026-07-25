@@ -4,6 +4,8 @@ import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.vanilla.tool.TodoWriteTool.Todo;
+
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
@@ -464,5 +466,14 @@ public final class ConsoleRenderer {
             return tu.text().length();
         }
         return 0;
+    }
+
+    public void printTodos(List<Todo> todos) {
+        List<String> sourceLines = new ArrayList<>();
+        for (int i = 0; i < todos.size(); i++) {
+            Todo todo = todos.get(i);
+            sourceLines.add(String.format("[%d] 任务：[%s] 状态:[%s]", i, todo.getContent(), todo.getStatus()));
+        }
+        printBox("任务进度",sourceLines, BLUE);
     }
 }

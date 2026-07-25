@@ -11,6 +11,7 @@ import com.vanilla.hook.HookContext;
 import com.vanilla.hook.HookDispatcher;
 import com.vanilla.hook.HookEvent;
 import com.vanilla.hook.HookResult;
+import com.vanilla.tool.TodoWriteTool;
 import com.vanilla.tool.Tool;
 import com.vanilla.tool.ToolManager;
 import com.vanilla.util.ConsoleRenderer;
@@ -154,6 +155,9 @@ public class Codey {
                 console.printToolResult(toolExeReq.name(), toolResult, elapsedMillis, success);
                 console.printMessageState(history);
                 history.add(ToolExecutionResultMessage.from(toolExeReq, toolResult));
+                if (!TodoWriteTool.getTodos().isEmpty()) {
+                    console.printTodos(TodoWriteTool.getTodos());   
+                }
             });
         }
     }

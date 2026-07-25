@@ -37,7 +37,7 @@ public class BudgetMessageCompactor {
     public static final int PREVIEW_CHARS = 2_000;
 
     /** 工具结果落盘目录（相对当前工作目录）。 */
-    public static final Path TOOL_RESULTS_DIR = Paths.get(".task_outputs", "tool-results");
+    public static final Path TOOL_RESULTS_DIR = Paths.get(".codey",".task_outputs", "tool-results");
 
     /** 单条 tool_result 中无法解析为单一文本的占位 id。 */
     private static final String UNKNOWN_TOOL_ID = "unknown";
