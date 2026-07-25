@@ -11,6 +11,7 @@ import java.util.List;
 
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ChatMessageType;
+import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 
 /**
@@ -142,7 +143,9 @@ public class BudgetMessageCompactor {
             }
             int beforeSize = content.length();
             int afterSize = persisted.length();
-            ToolExecutionResultMessage compacted = original.toBuilder().text(persisted).build();
+            ToolExecutionResultMessage compacted = original.toBuilder()
+                .contents(TextContent.from(persisted))
+                .build();
             history.set(slot.index(), compacted);
             persistedCount++;
             log("persisted toolResult #" + persistedCount + ": toolUseId=" + tid
