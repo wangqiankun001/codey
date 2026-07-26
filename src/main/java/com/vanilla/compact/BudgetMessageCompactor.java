@@ -44,7 +44,7 @@ public class BudgetMessageCompactor {
     private static final String UNKNOWN_TOOL_ID = "unknown";
 
     /** 用于在终端上区分压缩器自身输出的前缀。 */
-    private static final String LOG_PREFIX = "[compactor] ";
+    private static final String LOG_PREFIX = "[budget] ";
 
     /** 写入紧凑日志，自动 flush 以便在交互式终端里实时可见。 */
     private static void log(String message) {
