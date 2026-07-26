@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.vanilla.compactor.BudgetMessageCompactor;
+import com.vanilla.compactor.LLMMessageCompactor;
 import com.vanilla.compactor.MicoMessageCompactor;
 import com.vanilla.compactor.SnipMessageCompactor;
 import com.vanilla.content.Prompt;
@@ -109,6 +110,7 @@ public class Codey {
             BudgetMessageCompactor.toolResultBudget(history);
             SnipMessageCompactor.snipCompact(history);
             MicoMessageCompactor.micoCompact(history);
+            LLMMessageCompactor.llmCompact(history, client);
 
             if (roundsSinceTodo >= 3) {
                 history.add(UserMessage.from("<reminder>Update your todos.</reminder>"));
