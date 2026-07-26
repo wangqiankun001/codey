@@ -4,9 +4,9 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.vanilla.compact.BudgetMessageCompactor;
-import com.vanilla.compact.MicoMessageCompactor;
-import com.vanilla.compact.SnipMessageCompactor;
+import com.vanilla.compactor.BudgetMessageCompactor;
+import com.vanilla.compactor.MicoMessageCompactor;
+import com.vanilla.compactor.SnipMessageCompactor;
 import com.vanilla.content.Prompt;
 import com.vanilla.hook.HookContext;
 import com.vanilla.hook.HookDispatcher;

@@ -1,4 +1,4 @@
-package com.vanilla.compact;
+package com.vanilla.compactor;
 
 import java.util.ArrayList;
 import java.util.List;

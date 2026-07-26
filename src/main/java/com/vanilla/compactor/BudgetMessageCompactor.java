@@ -1,4 +1,4 @@
-package com.vanilla.compact;
+package com.vanilla.compactor;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
