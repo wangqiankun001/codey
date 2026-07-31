@@ -6,15 +6,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.stream.Collectors;
 
 import cn.hutool.json.JSONUtil;
-import dev.langchain4j.agent.tool.ToolExecutionRequest;
+import com.vanilla.util.ChatMessageJsonConvertor;
+
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
@@ -36,12 +37,14 @@ import dev.langchain4j.model.chat.response.ChatResponse;
  *   <li>压缩提示词本身走 {@link ChatRequest} 给大模型，而非单字符串
  *       {@code chat(String)}，以保留 system 提示与轮次语义。</li>
  *   <li>历史中含 {@code %} 时也不会再被 {@link String#format} 当占位符解析。</li>
+ *   <li>transcript 序列化统一走 {@link ChatMessageJsonConvertor}，避免再次
+ *       出现"text() 抛 IllegalStateException"之类的隐患。</li>
  * </ul>
  */
 public class LLMMessageCompactor {
 
     /** 触发 llm 压缩的字符阈值。 */
-    public static final int CONTEXT_LIMIT = 40_000;
+    public static final int CONTEXT_LIMIT = 50_000;
 
     /** 落到磁盘的 transcript 子目录（相对当前工作目录）。 */
     private static final Path TRANSCRIPT_DIR = Paths.get(".codey", "transcript");
@@ -150,8 +153,8 @@ public class LLMMessageCompactor {
             Path transcript = Files.createFile(
                     TRANSCRIPT_DIR.resolve(System.currentTimeMillis() + ".jsonl"));
             String content = history.stream()
-                    .map(LLMMessageCompactor::transcriptLine)
-                    .collect(java.util.stream.Collectors.joining("\n"));
+                    .map(ChatMessageJsonConvertor.INSTANCE::convert)
+                    .collect(Collectors.joining("\n"));
             Files.writeString(transcript, content, StandardCharsets.UTF_8);
             log("transcript written: path=" + transcript.toAbsolutePath()
                     + ", messages=" + history.size() + ", bytes=" + content.length());
@@ -160,34 +163,22 @@ public class LLMMessageCompactor {
         }
     }
 
-    /** 把一条 {@link ChatMessage} 转成 JSONL 一行，便于人/脚本解析。 */
-    private static String transcriptLine(ChatMessage message) {
-        Map<String, Object> map = new HashMap<>();
-        map.put("type", message.type().name());
-        if (message instanceof UserMessage um) {
-            map.put("name", um.name());
-            map.put("contents", um.contents());
-        } else if (message instanceof AiMessage am) {
-            map.put("text", am.text());
-            map.put("thinking", am.thinking());
-            if (am.hasToolExecutionRequests()) {
-                map.put("toolExecutionRequests", am.toolExecutionRequests());
-            }
-        } else if (message instanceof ToolExecutionResultMessage tm) {
-            map.put("id", tm.id());
-            map.put("toolName", tm.toolName());
-            map.put("text", tm.text());
-            map.put("isError", tm.isError());
-        } else if (message instanceof SystemMessage sm) {
-            map.put("text", sm.text());
-        }
-        return JSONUtil.toJsonStr(map);
-    }
-
-    /** 单条消息的纯文本长度，用来汇总逼近上下文窗口。 */
+    /**
+     * 单条消息的纯文本长度，用来汇总逼近上下文窗口。
+     *
+     * <p>{@link ToolExecutionResultMessage#text()} 在多模态下会抛
+     * {@link IllegalStateException}，这里改用 {@code hasSingleText()} 守卫
+     * 并从 {@code contents} 中聚合文本。
+     */
     private static int textLength(ChatMessage message) {
         if (message instanceof UserMessage um) {
-            return um.singleText().length();
+            int length = 0;
+            for (dev.langchain4j.data.message.Content c : um.contents()) {
+                if (c instanceof TextContent tc && tc.text() != null) {
+                    length += tc.text().length();
+                }
+            }
+            return length;
         } else if (message instanceof AiMessage am) {
             int length = 0;
             if (am.text() != null) {
@@ -207,7 +198,16 @@ public class LLMMessageCompactor {
             }
             return length;
         } else if (message instanceof ToolExecutionResultMessage tu) {
-            return tu.text() == null ? 0 : tu.text().length();
+            if (tu.hasSingleText()) {
+                return tu.text() == null ? 0 : tu.text().length();
+            }
+            int length = 0;
+            for (dev.langchain4j.data.message.Content c : tu.contents()) {
+                if (c instanceof TextContent tc && tc.text() != null) {
+                    length += tc.text().length();
+                }
+            }
+            return length;
         }
         return 0;
     }

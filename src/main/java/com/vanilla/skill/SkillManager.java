@@ -45,7 +45,7 @@ public final class SkillManager {
 
     public static String listSkills() {
         return SKILLS.entrySet().stream().map(entry -> {
-            return entry.getKey() + ":" + entry.getValue().content();
+            return entry.getKey() + ":\n" + entry.getValue().description();
         }).collect(Collectors.joining("\n"));
     }
 

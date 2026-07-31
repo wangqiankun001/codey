@@ -7,16 +7,20 @@ import java.util.List;
 import com.vanilla.compactor.BudgetMessageCompactor;
 import com.vanilla.compactor.LLMMessageCompactor;
 import com.vanilla.compactor.MicoMessageCompactor;
+import com.vanilla.compactor.ReactiveMessageCompactor;
 import com.vanilla.compactor.SnipMessageCompactor;
 import com.vanilla.content.Prompt;
 import com.vanilla.hook.HookContext;
 import com.vanilla.hook.HookDispatcher;
 import com.vanilla.hook.HookEvent;
 import com.vanilla.hook.HookResult;
+import com.vanilla.memory.MemoryUtil;
 import com.vanilla.tool.TodoWriteTool;
 import com.vanilla.tool.Tool;
 import com.vanilla.tool.ToolManager;
 import com.vanilla.util.ConsoleRenderer;
+
+import cn.hutool.core.util.StrUtil;
 
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.LineReader;
@@ -39,6 +43,7 @@ public class Codey {
 
     private final List<ChatMessage> history = new ArrayList<>();
     private final ConsoleRenderer console = new ConsoleRenderer(System.out);
+    private final int MAX_REACTIVE_RETRIES = 1;
     private final Terminal terminal;
     private final LineReader lineReader;
 
@@ -79,6 +84,8 @@ public class Codey {
                 if ("exit".equals(input.strip())) {
                     console.printGoodbye();
                     return;
+                } else if (StrUtil.isBlankIfStr(input)) {
+                    continue;
                 }
                 HookResult hookResult = HookDispatcher.dispatch(HookEvent.UserPromptSubmit, HookContext.from(input));
                 if (!hookResult.continueRun()) {
@@ -104,30 +111,36 @@ public class Codey {
     }
 
     private AiMessage agentLoop(List<ChatMessage> history, String userInput) {
-        int roundsSinceTodo = 0;
         while (true) {
 
             BudgetMessageCompactor.toolResultBudget(history);
             SnipMessageCompactor.snipCompact(history);
             MicoMessageCompactor.micoCompact(history);
             LLMMessageCompactor.llmCompact(history, client);
-
-            if (roundsSinceTodo >= 3) {
-                history.add(UserMessage.from("<reminder>Update your todos.</reminder>"));
+            int retryTimes = 0;
+            ChatResponse response;
+            while (true) {
+                try {
+                    response = client.chat(ChatRequest.builder()
+                            .toolSpecifications(ToolManager.toolSpecifications())
+                            .messages(history)
+                            .build());
+                    break;
+                } catch (Exception e) {
+                    if (retryTimes < MAX_REACTIVE_RETRIES) {
+                        ReactiveMessageCompactor.reactiveCompact(history, client);
+                        retryTimes++;
+                    }
+                }
             }
-
-            ChatResponse response = client.chat(ChatRequest.builder()
-                    .toolSpecifications(ToolManager.toolSpecifications())
-                    .messages(history)
-                    .build());
 
             AiMessage aiMessage = response.aiMessage();
             history.add(aiMessage);
             if (!FinishReason.TOOL_EXECUTION.equals(response.finishReason())) {
+                MemoryUtil.extractMemory(history,client);
                 HookDispatcher.dispatch(HookEvent.Stop, HookContext.builder().history(history).build());
                 return aiMessage;
             }
-            roundsSinceTodo++;
             aiMessage.toolExecutionRequests().forEach(toolExeReq -> {
                 Tool tool = ToolManager.handler(toolExeReq.name());
                 if (tool == null) {
@@ -160,7 +173,7 @@ public class Codey {
                 console.printMessageState(history);
                 history.add(ToolExecutionResultMessage.from(toolExeReq, toolResult));
                 if (!TodoWriteTool.getTodos().isEmpty()) {
-                    console.printTodos(TodoWriteTool.getTodos());   
+                    console.printTodos(TodoWriteTool.getTodos());
                 }
             });
         }

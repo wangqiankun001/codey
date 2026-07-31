@@ -21,7 +21,7 @@ import dev.langchain4j.data.message.UserMessage;
 public class SnipMessageCompactor {
 
     /** 历史长度超过该阈值时触发 snip 压缩。 */
-    public static int MAX_MESSAGE_SIZE = 50;
+    public static int MAX_MESSAGE_SIZE = 60;
 
     /** 头部恒定保留条数。 */
     private static final int KEEP_HEAD_SIZE = 2;
