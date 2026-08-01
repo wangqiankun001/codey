@@ -68,7 +68,7 @@ public class Codey {
 
     private void run() {
         console.printWelcome();
-        history.add(SystemMessage.from(Prompt.SYSTEM));
+        history.add(SystemMessage.from(SystemMessageBuilder.buildSystemMessage()));
 
         try {
             while (true) {
@@ -142,6 +142,7 @@ public class Codey {
             history.add(aiMessage);
             if (!FinishReason.TOOL_EXECUTION.equals(response.finishReason())) {
                 MemoryManager.extractMemory(history, client);
+                MemoryManager.consolidateMemories(client);
                 HookDispatcher.dispatch(HookEvent.Stop, HookContext.builder().history(history).build());
                 return aiMessage;
             }

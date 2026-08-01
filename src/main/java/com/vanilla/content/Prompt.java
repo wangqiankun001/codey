@@ -14,6 +14,6 @@ public interface Prompt {
             Skills avalibale:
             %s
             """,
-            System.getProperty("user.dir"), System.getProperty("os.name"), SkillManager.listSkills());
+            System.getProperty("user.dir"), System.getProperty("os.name"), SkillManager.skillIndex());
 
 }

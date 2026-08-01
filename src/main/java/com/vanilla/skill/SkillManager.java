@@ -43,7 +43,7 @@ public final class SkillManager {
         return descriptionLine.split(":", 2)[1];
     }
 
-    public static String listSkills() {
+    public static String skillIndex() {
         return SKILLS.entrySet().stream().map(entry -> {
             return entry.getKey() + ":\n" + entry.getValue().description();
         }).collect(Collectors.joining("\n"));
