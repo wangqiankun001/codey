@@ -3,6 +3,7 @@ package com.vanilla;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import com.vanilla.compactor.BudgetMessageCompactor;
 import com.vanilla.compactor.LLMMessageCompactor;
@@ -14,7 +15,7 @@ import com.vanilla.hook.HookContext;
 import com.vanilla.hook.HookDispatcher;
 import com.vanilla.hook.HookEvent;
 import com.vanilla.hook.HookResult;
-import com.vanilla.memory.MemoryUtil;
+import com.vanilla.memory.MemoryManager;
 import com.vanilla.tool.TodoWriteTool;
 import com.vanilla.tool.Tool;
 import com.vanilla.tool.ToolManager;
@@ -62,6 +63,7 @@ public class Codey {
             .apiKey("sk-cp-RZhJK2wUGo-b2m18glB-pAyIG6X2-phMbLOSKFiONzBgW16K68UVoU3B7Ir7VOwo02KzJHyr5v6Uijst-jl4Lfx0XCjsVHtDbjFOP_k6FWRJxvDAnSzgbBc")
             .baseUrl("https://api.minimaxi.com/v1")
             .modelName("MiniMax-M3")
+            .customParameters(Map.of("reasoning_split", true))
             .build();
 
     private void run() {
@@ -137,7 +139,7 @@ public class Codey {
             AiMessage aiMessage = response.aiMessage();
             history.add(aiMessage);
             if (!FinishReason.TOOL_EXECUTION.equals(response.finishReason())) {
-                MemoryUtil.extractMemory(history,client);
+                MemoryManager.extractMemory(history,client);
                 HookDispatcher.dispatch(HookEvent.Stop, HookContext.builder().history(history).build());
                 return aiMessage;
             }
