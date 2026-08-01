@@ -41,19 +41,6 @@ public class MemoryManager {
             - body: full detail in markdown
             If nothing new or already covered by existing memories, return {"memories": []}.
             直接返回JSON格式的内容，不要包含其他非相关内容。
-            错误示例：
-            "```json
-            {
-                "memories": [
-                    {
-                    "name": "user-preference-format-code",
-                    "type": "user",
-                    "description": "User prefers to format code after writing it",
-                    "body": "..."
-                    }
-                ]
-            }
-            ```"
             正确的示例：
             {
                 "memories": [

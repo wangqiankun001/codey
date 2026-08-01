@@ -44,7 +44,7 @@ public class Codey {
 
     private final List<ChatMessage> history = new ArrayList<>();
     private final ConsoleRenderer console = new ConsoleRenderer(System.out);
-    private final int MAX_REACTIVE_RETRIES = 1;
+    private final int MAX_REACTIVE_RETRIES = 3;
     private final Terminal terminal;
     private final LineReader lineReader;
 
@@ -60,9 +60,9 @@ public class Codey {
     }
 
     private final OpenAiChatModel client = OpenAiChatModel.builder()
-            .apiKey("sk-cp-RZhJK2wUGo-b2m18glB-pAyIG6X2-phMbLOSKFiONzBgW16K68UVoU3B7Ir7VOwo02KzJHyr5v6Uijst-jl4Lfx0XCjsVHtDbjFOP_k6FWRJxvDAnSzgbBc")
-            .baseUrl("https://api.minimaxi.com/v1")
-            .modelName("MiniMax-M3")
+            .apiKey(System.getenv("OPENAI_API_KEY"))
+            .baseUrl(System.getenv("OPENAI_BASE_URL"))
+            .modelName(System.getenv("OPENAI_MODEL_NAME"))
             .customParameters(Map.of("reasoning_split", true))
             .build();
 
@@ -98,7 +98,7 @@ public class Codey {
 
                 try {
                     AiMessage answer = this.agentLoop(history, input);
-                    console.printAiMessage(answer.text());
+                    if (answer != null) console.printAiMessage(answer.text());
                 } catch (RuntimeException e) {
                     console.printError(readableError(e));
                 }
@@ -114,7 +114,6 @@ public class Codey {
 
     private AiMessage agentLoop(List<ChatMessage> history, String userInput) {
         while (true) {
-
             BudgetMessageCompactor.toolResultBudget(history);
             SnipMessageCompactor.snipCompact(history);
             MicoMessageCompactor.micoCompact(history);
@@ -122,6 +121,7 @@ public class Codey {
             int retryTimes = 0;
             ChatResponse response;
             while (true) {
+                retryTimes++;
                 try {
                     response = client.chat(ChatRequest.builder()
                             .toolSpecifications(ToolManager.toolSpecifications())
@@ -131,7 +131,9 @@ public class Codey {
                 } catch (Exception e) {
                     if (retryTimes < MAX_REACTIVE_RETRIES) {
                         ReactiveMessageCompactor.reactiveCompact(history, client);
-                        retryTimes++;
+                    } else {
+                        console.printError("达到最大尝试次数");
+                        return null;
                     }
                 }
             }
@@ -139,7 +141,7 @@ public class Codey {
             AiMessage aiMessage = response.aiMessage();
             history.add(aiMessage);
             if (!FinishReason.TOOL_EXECUTION.equals(response.finishReason())) {
-                MemoryManager.extractMemory(history,client);
+                MemoryManager.extractMemory(history, client);
                 HookDispatcher.dispatch(HookEvent.Stop, HookContext.builder().history(history).build());
                 return aiMessage;
             }
