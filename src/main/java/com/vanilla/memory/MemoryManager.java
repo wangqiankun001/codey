@@ -163,7 +163,7 @@ public class MemoryManager {
                 file.createNewFile();
             }
             String content = String.format(MEMORY_FILE_CONTENT_TEMPLATE, memory.name(), memory.description(),
-                    memory.type(), memory.body());
+                    memory.type().getValue(), memory.body());
             Files.writeString(path, content);
         } catch (Exception e) {
             System.out.println("记忆文件创建失败: " + memory.name());
