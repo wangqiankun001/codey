@@ -28,7 +28,7 @@ import dev.langchain4j.model.openai.OpenAiChatModel;
 
 public class MemoryManager {
 
-    private static Path dir = Path.of(System.getProperty("user.dir"), ".codey", "memory");
+    private static Path dir = Path.of(System.getProperty("user.dir"), ".codey", "memories");
 
     private static final ObjectMapper mapper = new ObjectMapper();
 

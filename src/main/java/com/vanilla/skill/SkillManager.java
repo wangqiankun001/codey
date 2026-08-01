@@ -14,7 +14,7 @@ public final class SkillManager {
     private static final Map<String, Skill> SKILLS = new HashMap<>();
 
     static {
-        Path dir = Paths.get(System.getProperty("user.dir"), ".skills");
+        Path dir = Paths.get(System.getProperty("user.dir"), ".codey", "skills");
         if (Files.exists(dir)) {
             try {
                 Files.list(dir).forEach(skillDir -> {
