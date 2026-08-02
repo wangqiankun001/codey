@@ -113,6 +113,9 @@ public class Codey {
     }
 
     private AiMessage agentLoop(List<ChatMessage> history, String userInput) {
+
+        MemoryManager.injectRelevantMemory(history,client);
+
         while (true) {
             BudgetMessageCompactor.toolResultBudget(history);
             SnipMessageCompactor.snipCompact(history);

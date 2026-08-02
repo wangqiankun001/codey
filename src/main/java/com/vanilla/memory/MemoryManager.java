@@ -81,26 +81,6 @@ public class MemoryManager {
             %s
             """;
 
-    /**
-     * 剥离模型可能包裹在 JSON 外的 Markdown 代码块外壳（```json ... ``` 或 ``` ... ```）。
-     * response_format 只能约束模型输出 JSON，但不能强制它去掉 Markdown 外壳。
-     */
-    private static String stripCodeFence(String raw) {
-        if (raw == null) {
-            return null;
-        }
-        String trimmed = raw.trim();
-        if (!trimmed.startsWith("```")) {
-            return trimmed;
-        }
-        int firstNewline = trimmed.indexOf('\n');
-        int lastFence = trimmed.lastIndexOf("```");
-        if (firstNewline != -1 && lastFence > firstNewline) {
-            trimmed = trimmed.substring(firstNewline + 1, lastFence);
-        }
-        return trimmed.trim();
-    }
-
     private static List<String> listMemoryFiles() {
         File file = dir.toFile();
         if (!file.exists()) {
@@ -116,7 +96,7 @@ public class MemoryManager {
     }
 
     private static List<Memory> loadAllMemory() {
-        return listMemoryFiles().stream().map(MemoryManager::loadMemory).toList();
+        return listMemoryFiles().stream().map(MemoryManager::loadMemory).filter(mem -> mem != null).toList();
     }
 
     private static Memory loadMemory(String fileName) {
@@ -131,6 +111,19 @@ public class MemoryManager {
             return null;
         }
         return parse(strMemory);
+    }
+
+    private static String loadMemoryAsString(String fileName) {
+        Path path = dir.resolve(fileName);
+        if (!path.toFile().exists()) {
+            return "";
+        }
+        try {
+            return Files.readString(path);
+        } catch (IOException e) {
+            System.out.println("读取记忆文件作为字符串失败" + fileName + ".md");
+            return "";
+        }
     }
 
     private static Memory parse(String strMemory) {
@@ -264,5 +257,47 @@ public class MemoryManager {
             System.out.println("过期记忆删除失败");
         }
         wrapper.memories().forEach(MemoryManager::writeMemory);
+    }
+
+    public static void injectRelevantMemory(List<ChatMessage> history, OpenAiChatModel client) {
+        List<Memory> memories = loadAllMemory();
+        if (memories.isEmpty()) {
+            return;
+        }
+        StringBuilder stringBuilder = new StringBuilder();
+        for (int i = 0; i < memories.size(); i++) {
+            var mem = memories.get(i);
+            stringBuilder.append(String.format("%d: %s - %s\n", i, mem.name(), mem.description()));
+        }
+        var catalog = stringBuilder.toString();
+        var lastUserMessage = UserMessage.findLast(history).get();
+        String prompt = String.format("""
+                Given the recent conversation and the memory catalog below,
+                select the indices of memories that are clearly relevant.
+                Return ONLY a array of integers,split by ',' e.g. 0,3.
+                If none are relevant, return empty string.
+
+                Recent user conversation:
+                %s
+                Memory catalog:
+                %s
+                """, lastUserMessage.singleText(), catalog);
+        String relevantIdx = client.chat(prompt);
+        if (StrUtil.isBlank(relevantIdx)) {
+            return;
+        }
+
+        var relevantMemories = Stream.of(relevantIdx.split(",")).filter(StrUtil::isNotBlank)
+                .mapToInt(Integer::valueOf).mapToObj(memories::get).toList();
+        stringBuilder = new StringBuilder();
+
+        stringBuilder.append("<relevant_memories>");
+        stringBuilder.append("\n");
+        for (Memory mem : relevantMemories) {
+            stringBuilder.append(loadMemoryAsString(mem.name() + ".md"));
+            stringBuilder.append("\n\n");
+        }
+        stringBuilder.append("</relevant_memories>");
+        history.add(UserMessage.from(stringBuilder.toString()));
     }
 }
