@@ -61,6 +61,7 @@ public class Codey {
 
     private final OpenAiChatModel client = OpenAiChatModel.builder()
             .apiKey(System.getenv("OPENAI_API_KEY"))
+            .strictJsonSchema(true)
             .baseUrl(System.getenv("OPENAI_BASE_URL"))
             .modelName(System.getenv("OPENAI_MODEL_NAME"))
             .customParameters(Map.of("reasoning_split", true))

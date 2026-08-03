@@ -148,7 +148,7 @@ public class MemoryManager {
         try {
             wrapper = mapper.readValue(aiMessage.text(), MemoryWrapper.class);
         } catch (JsonProcessingException e) {
-            System.out.println("ai提取记忆内容格式不符合格式: " + aiMessage.text());
+            System.out.println("[extractMemory] ai提取记忆内容格式不符合格式: " + aiMessage.text());
             return;
         }
         wrapper.memories().forEach(m -> writeMemory(m));
@@ -223,7 +223,7 @@ public class MemoryManager {
                     body: %s
                     """, mem.name() + ".md", mem.name(), mem.description(), mem.body());
         }).collect(Collectors.joining("\n\n"));
-        String propmt = """
+        String prompt = """
                 Consolidate the following memory files. Rules:
                 1. Merge duplicates into one
                 2. Remove outdated/contradicted memories
@@ -236,7 +236,7 @@ public class MemoryManager {
 
                 """ + catalog;
         ChatResponse response = client.chat(ChatRequest.builder()
-                .messages(UserMessage.from(propmt))
+                .messages(UserMessage.from(prompt))
                 .responseFormat(MEMORY_RESPONSE_FORMAT)
                 .build());
         MemoryWrapper wrapper;
@@ -244,7 +244,7 @@ public class MemoryManager {
         try {
             wrapper = mapper.readValue(aiMessage.text(), MemoryWrapper.class);
         } catch (JsonProcessingException e) {
-            System.out.println("ai提取记忆内容格式不符合格式: " + aiMessage.text());
+            System.out.println("[consolidateMemories] ai提取记忆内容格式不符合格式: " + aiMessage.text());
             return;
         }
         try {

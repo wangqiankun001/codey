@@ -347,6 +347,14 @@ codey/
 
 ---
 
+## 📚 项目文档
+
+设计文档放在 [`docs/`](./docs/) 下：
+
+- [`memory-maintenance-design.md`](./docs/memory-maintenance-design.md) — 记忆维护机制设计：避免 Agent 直接修改记忆文件（对比 Claude Code / Codex）
+
+---
+
 ## 🤝 贡献
 
 欢迎提 Issue / PR：
