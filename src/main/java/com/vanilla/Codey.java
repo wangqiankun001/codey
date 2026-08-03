@@ -2,6 +2,7 @@ package com.vanilla;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -114,7 +115,7 @@ public class Codey {
     }
 
     private AiMessage agentLoop(List<ChatMessage> history, String userInput) {
-
+        List<ChatMessage> preCompact = List.of(history.toArray(ChatMessage[]::new));
         MemoryManager.injectRelevantMemory(history,client);
 
         while (true) {
@@ -145,7 +146,7 @@ public class Codey {
             AiMessage aiMessage = response.aiMessage();
             history.add(aiMessage);
             if (!FinishReason.TOOL_EXECUTION.equals(response.finishReason())) {
-                MemoryManager.extractMemory(history, client);
+                MemoryManager.extractMemory(preCompact, client);
                 MemoryManager.consolidateMemories(client);
                 HookDispatcher.dispatch(HookEvent.Stop, HookContext.builder().history(history).build());
                 return aiMessage;
