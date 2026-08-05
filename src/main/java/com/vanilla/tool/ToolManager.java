@@ -22,7 +22,7 @@ public class ToolManager {
         register(new LoadSkillTool());
     }
 
-    public static void register(Tool tool){
+    public static void register(Tool tool) {
         TOOL_SPECIFICATIONS.put(tool.getSpecification().name(), tool.getSpecification());
         HANDLERS.put(tool.getSpecification().name(), tool);
     }
@@ -35,7 +35,11 @@ public class ToolManager {
         return TOOL_SPECIFICATIONS.values().stream().toList();
     }
 
-    public static List<ToolSpecification> subagentToolSpecifications(){
+    public static List<ToolSpecification> subagentToolSpecifications() {
         return TOOL_SPECIFICATIONS.values().stream().filter(tool -> tool.name() != "task").toList();
+    }
+
+    public static List<String> enabledTools() {
+        return List.of(HANDLERS.keySet().toArray(String[]::new));
     }
 }

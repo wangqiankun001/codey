@@ -201,12 +201,12 @@ public class MemoryManager {
     public static String readMemoryIndex() {
         File memoryIndex = dir.resolve("MEMORY.md").toFile();
         if (!memoryIndex.exists()) {
-            return "<暂时没有记忆>";
+            return null;
         }
         try {
             return Files.readString(memoryIndex.toPath());
         } catch (IOException e) {
-            return "<记忆索引读取失败>";
+            return null;
         }
     }
 

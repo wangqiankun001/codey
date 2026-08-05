@@ -29,10 +29,10 @@ import dev.langchain4j.data.message.ToolExecutionResultMessage;
 public class BudgetMessageCompactor {
 
     /** 单条 tool_result 超过该字符数就落盘，仅保留预览。 */
-    public static final int PERSIST_THRESHOLD = 30_000 / 3; //原教材 30_000
+    public static final int PERSIST_THRESHOLD = 30_000; //原教材 30_000
 
     /** 连续工具结果累计字符预算（超过即开始压缩）。 */
-    public static final int MAX_BYTES = 200_000 / 10; //原教材 200_000
+    public static final int MAX_BYTES = 200_000; //原教材 200_000
 
     /** 落盘后保留的预览长度（字符）。 */
     public static final int PREVIEW_CHARS = 2_000;

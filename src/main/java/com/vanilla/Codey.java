@@ -17,6 +17,7 @@ import com.vanilla.hook.HookDispatcher;
 import com.vanilla.hook.HookEvent;
 import com.vanilla.hook.HookResult;
 import com.vanilla.memory.MemoryManager;
+import com.vanilla.prompt.SystemMessageBuilder;
 import com.vanilla.tool.TodoWriteTool;
 import com.vanilla.tool.Tool;
 import com.vanilla.tool.ToolManager;
@@ -70,7 +71,7 @@ public class Codey {
 
     private void run() {
         console.printWelcome();
-        history.add(SystemMessage.from(SystemMessageBuilder.buildSystemMessage()));
+        history.add(SystemMessage.from(SystemMessageBuilder.getSystemPrompt()));
 
         try {
             while (true) {
@@ -119,6 +120,7 @@ public class Codey {
         MemoryManager.injectRelevantMemory(history,client);
 
         while (true) {
+            history.set(0, SystemMessage.from(SystemMessageBuilder.getSystemPrompt()));
             BudgetMessageCompactor.toolResultBudget(history);
             SnipMessageCompactor.snipCompact(history);
             MicoMessageCompactor.micoCompact(history);

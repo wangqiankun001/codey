@@ -58,12 +58,11 @@ public class MicoMessageCompactor {
         int skippedBelowThreshold = 0;
         for (Integer idx : targets) {
             ToolExecutionResultMessage toolExecutionResultMessage = (ToolExecutionResultMessage) history.get(idx);
-            if (!toolExecutionResultMessage.hasSingleText()) {
-                skippedBelowThreshold++;
-                continue;
-            }
-            int textLen = toolExecutionResultMessage.text().length();
-            if (textLen <= TOOL_USE_SIZE_THRESHOLD) {
+            int toolResultLength = toolExecutionResultMessage.contents().stream().filter(TextContent.class::isInstance)
+                    .mapToInt(tc -> {
+                        return ((TextContent) tc).text().length();
+                    }).sum();
+            if (toolResultLength <= TOOL_USE_SIZE_THRESHOLD) {
                 skippedBelowThreshold++;
                 continue;
             }
