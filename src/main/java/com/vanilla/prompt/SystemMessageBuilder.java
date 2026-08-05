@@ -1,14 +1,16 @@
 package com.vanilla.prompt;
 
+import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Map;
 import java.util.StringJoiner;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vanilla.memory.MemoryManager;
 import com.vanilla.tool.ToolManager;
 
 import cn.hutool.core.util.StrUtil;
-import cn.hutool.json.JSONUtil;
 
 public class SystemMessageBuilder {
 
@@ -17,6 +19,8 @@ public class SystemMessageBuilder {
     private static String lastContextKey;
 
     private static String lastPrompt;
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static Map<String, String> PROMPT_SECTIONS = Map.of(
             "identity", "You are a coding agent. Act, don't explain.",
@@ -29,7 +33,12 @@ public class SystemMessageBuilder {
     }
 
     public static String getSystemPrompt(Context context) {
-        String key = JSONUtil.toJsonStr(context);
+        String key;
+        try {
+            key = MAPPER.writeValueAsString(context);
+        } catch (JsonProcessingException e) {
+            throw new UncheckedIOException("JSON序列化失败",e);
+        }
         if (StrUtil.equals(lastContextKey, key)){
 
             return lastPrompt;

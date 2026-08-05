@@ -98,10 +98,11 @@ public class LLMMessageCompactor {
         writeTranscript(history);
 
         log("start llm compaction: total=" + total + " chars > contextLimit=" + CONTEXT_LIMIT);
-        String conversation = JSONUtil.toJsonStr(history);
+        String conversation = history.stream().map(ChatMessageJsonConvertor.INSTANCE::convert)
+            .collect(Collectors.joining("\n\n"));
 
         // 拼成单条 user 消息正文，避免 String.format 解析 JSON 里的 % 占位符。
-        String userPrompt = COMPACT_INSTRUCTION + conversation;
+        String userPrompt = COMPACT_INSTRUCTION + "\n" + conversation;
 
         ChatResponse response;
         try {

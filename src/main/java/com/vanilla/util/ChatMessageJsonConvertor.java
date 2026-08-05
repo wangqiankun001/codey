@@ -4,9 +4,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import cn.hutool.core.util.StrUtil;
-import cn.hutool.json.JSONUtil;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.Content;
@@ -18,6 +19,8 @@ import dev.langchain4j.data.message.UserMessage;
 public class ChatMessageJsonConvertor {
 
     public static final ChatMessageJsonConvertor INSTANCE = new ChatMessageJsonConvertor();
+
+    private static final ObjectMapper om = new ObjectMapper();
 
     private ChatMessageJsonConvertor() {
     }
@@ -45,7 +48,11 @@ public class ChatMessageJsonConvertor {
         } else {
             throw new RuntimeException("暂不支持的类型：" + chatMessage.type().name());
         }
-        return JSONUtil.toJsonStr(data);
+        try {
+            return om.writeValueAsString(data);
+        } catch (JsonProcessingException e) {
+            return null;
+        }
     }
 
     private List<String> extractInfoFromContents(List<Content> contents) {
