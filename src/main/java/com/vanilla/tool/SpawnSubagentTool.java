@@ -2,6 +2,7 @@ package com.vanilla.tool;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
@@ -89,10 +90,12 @@ public class SpawnSubagentTool implements Tool {
         private final ConsoleRenderer console;
 
         private final OpenAiChatModel client = OpenAiChatModel.builder()
-                .apiKey("sk-cp-RZhJK2wUGo-b2m18glB-pAyIG6X2-phMbLOSKFiONzBgW16K68UVoU3B7Ir7VOwo02KzJHyr5v6Uijst-jl4Lfx0XCjsVHtDbjFOP_k6FWRJxvDAnSzgbBc")
-                .baseUrl("https://api.minimaxi.com/v1")
-                .modelName("MiniMax-M3")
-                .build();
+            .apiKey(System.getenv("OPENAI_API_KEY"))
+            .strictJsonSchema(true)
+            .baseUrl(System.getenv("OPENAI_BASE_URL"))
+            .modelName(System.getenv("OPENAI_MODEL_NAME"))
+            .customParameters(Map.of("reasoning_split", true))
+            .build();
 
         public Subagent(String task) {
             this(task, ConsoleRenderer.getShared());

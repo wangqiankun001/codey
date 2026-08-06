@@ -36,7 +36,7 @@ public class ToolManager {
     }
 
     public static List<ToolSpecification> subagentToolSpecifications() {
-        return TOOL_SPECIFICATIONS.values().stream().filter(tool -> tool.name() != "task").toList();
+        return TOOL_SPECIFICATIONS.values().stream().filter(tool -> !"task".equals(tool.name())).toList();
     }
 
     public static List<String> enabledTools() {
