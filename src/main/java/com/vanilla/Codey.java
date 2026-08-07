@@ -1,17 +1,20 @@
 package com.vanilla;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import com.vanilla.compactor.BudgetMessageCompactor;
 import com.vanilla.compactor.LLMMessageCompactor;
 import com.vanilla.compactor.MicoMessageCompactor;
 import com.vanilla.compactor.ReactiveMessageCompactor;
 import com.vanilla.compactor.SnipMessageCompactor;
-import com.vanilla.content.Prompt;
 import com.vanilla.hook.HookContext;
 import com.vanilla.hook.HookDispatcher;
 import com.vanilla.hook.HookEvent;
@@ -21,8 +24,10 @@ import com.vanilla.prompt.SystemMessageBuilder;
 import com.vanilla.tool.TodoWriteTool;
 import com.vanilla.tool.Tool;
 import com.vanilla.tool.ToolManager;
+import com.vanilla.util.ChatMessageJsonConvertor;
 import com.vanilla.util.ConsoleRenderer;
 
+import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.util.StrUtil;
 
 import org.jline.reader.EndOfFileException;
@@ -43,6 +48,10 @@ import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.output.FinishReason;
 
 public class Codey {
+
+    public static final Path WORKSPACE = Paths.get(System.getProperty("user.dir"));
+
+    public static final Path CONFIG_PATH = WORKSPACE.resolve(".codey");
 
     private final List<ChatMessage> history = new ArrayList<>();
     private final ConsoleRenderer console = new ConsoleRenderer(System.out);
@@ -103,7 +112,7 @@ public class Codey {
                     AiMessage answer = this.agentLoop(history, input);
                     if (answer != null) console.printAiMessage(answer.text());
                 } catch (RuntimeException e) {
-                    console.printError(readableError(e));
+                    console.printError(readableError(e, history));
                 }
             }
         } finally {
@@ -177,7 +186,7 @@ public class Codey {
                 try {
                     toolResult = tool.execute(toolExeReq);
                 } catch (RuntimeException e) {
-                    toolResult = "Error: tool execution failed: " + readableError(e);
+                    toolResult = "Error: tool execution failed: " + readableError(e, history);
                 }
                 long elapsedMillis = System.currentTimeMillis() - startMillis;
                 boolean success = toolResult != null && !toolResult.startsWith("Error:");
@@ -191,8 +200,19 @@ public class Codey {
         }
     }
 
-    private static String readableError(RuntimeException error) {
+    private static String readableError(RuntimeException error,List<ChatMessage> history) {
         String message = error.getMessage();
+        Path path = CONFIG_PATH.resolve("error").resolve(DateUtil.now() + ".jsonl");
+        try {
+            Files.createDirectories(path.getParent());
+            Files.createFile(path);
+            String crimeScene = history.stream().map(ChatMessageJsonConvertor.INSTANCE::convert).collect(Collectors.joining("\n"));
+            Files.writeString(path, message);
+            Files.writeString(path, "\n\n");
+            Files.writeString(path, crimeScene, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+
+        }
         if (message == null || message.isBlank()) {
             return "请求 AI 时发生未知错误，请稍后重试。";
         }

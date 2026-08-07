@@ -9,6 +9,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
+import com.vanilla.util.ConsoleRenderer;
+
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ChatMessageType;
 import dev.langchain4j.data.message.TextContent;
@@ -29,10 +31,10 @@ import dev.langchain4j.data.message.ToolExecutionResultMessage;
 public class BudgetMessageCompactor {
 
     /** 单条 tool_result 超过该字符数就落盘，仅保留预览。 */
-    public static final int PERSIST_THRESHOLD = 30_000; //原教材 30_000
+    public static final int PERSIST_THRESHOLD = 15_000; //原教材 30_000
 
     /** 连续工具结果累计字符预算（超过即开始压缩）。 */
-    public static final int MAX_BYTES = 200_000; //原教材 200_000
+    public static final int MAX_BYTES = 100_000; //原教材 200_000
 
     /** 落盘后保留的预览长度（字符）。 */
     public static final int PREVIEW_CHARS = 2_000;
@@ -48,8 +50,7 @@ public class BudgetMessageCompactor {
 
     /** 写入紧凑日志，自动 flush 以便在交互式终端里实时可见。 */
     private static void log(String message) {
-        System.out.println(LOG_PREFIX + message);
-        System.out.flush();
+        ConsoleRenderer.getShared().printDebug(LOG_PREFIX, message);
     }
 
     /**
@@ -73,13 +74,16 @@ public class BudgetMessageCompactor {
      *       {@link #persistLargeOutput(String, String)} 落盘并替换为短引用，
      *       直到总长度回到预算内或没有更多可压缩条目。</li>
      * </ol>
+     *
+     * <p>无论是否真正发生压缩，每次调用都会通过 {@link ConsoleRenderer#printDebug}
+     * 输出 <b>恰好一行</b>关键日志：要么是不满足压缩条件的说明，要么是
+     * 压缩前后的字符数对比。这样能在长时间运行的会话里直观看到每次触发的决策。
      */
     public static List<ChatMessage> toolResultBudget(List<ChatMessage> history, int maxBytes) {
         if (history == null || history.isEmpty()) {
+            log("skipped: history is empty");
             return history;
         }
-        log("enter toolResultBudget: historySize=" + history.size()
-                + ", budget=" + maxBytes + " chars");
 
         // 1) 定位最后一段连续的 TOOL_EXECUTION_RESULT：[start, end)
         int end = history.size();
@@ -88,11 +92,9 @@ public class BudgetMessageCompactor {
             start--;
         }
         if (start == end) {
-            log("skip compaction: no trailing tool_result segment in history");
-            return history; // 末尾没有工具结果段，无需压缩
+            log("skipped: no trailing tool results (history=" + history.size() + " msgs)");
+            return history;
         }
-        int segmentCount = end - start;
-        log("tail segment detected: indices=[" + start + ", " + end + "), toolResults=" + segmentCount);
 
         // 2) 仅参与预算的是纯文本结果；多模态/复合 contents 的 text() 会抛异常，直接跳过
         List<Slot> slots = new ArrayList<>(end - start);
@@ -103,23 +105,21 @@ public class BudgetMessageCompactor {
             }
         }
         if (slots.isEmpty()) {
-            log("skip compaction: no single-text tool results in tail segment");
+            log("skipped: no single-text tool results in tail (tail=" + (end - start) + " msgs)");
             return history;
         }
 
-        int total = slots.stream().mapToInt(Slot::length).sum();
-        if (total <= maxBytes) {
-            log("skip compaction: total=" + total + " chars already within budget=" + maxBytes
-                    + " (singleTextCount=" + slots.size() + ")");
+        int originalTotal = slots.stream().mapToInt(Slot::length).sum();
+        if (originalTotal <= maxBytes) {
+            log("skipped: " + originalTotal + " <= maxBytes " + maxBytes
+                    + " (tail=" + slots.size() + " toolResults)");
             return history;
         }
-        log("start compaction: total=" + total + " chars > budget=" + maxBytes
-                + ", threshold=" + PERSIST_THRESHOLD + " chars, preview=" + PREVIEW_CHARS + " chars");
-
-        int originalTotal = total;
-        int persistedCount = 0;
 
         // 3) 按长度从大到小逐个落盘
+        int total = originalTotal;
+        int persistedCount = 0;
+        String firstPersistError = null;
         List<Slot> ranked = new ArrayList<>(slots);
         ranked.sort(Comparator.comparingInt(Slot::length).reversed());
 
@@ -134,22 +134,19 @@ public class BudgetMessageCompactor {
             ToolExecutionResultMessage original = (ToolExecutionResultMessage) history.get(slot.index());
             String content = original.text();
             String tid = original.id() == null ? UNKNOWN_TOOL_ID : original.id();
-            String persisted = persistLargeOutput(tid, content);
-            if (persisted.length() >= content.length()) {
+            PersistResult result = persistLargeOutput(tid, content);
+            if (firstPersistError == null && result.error != null) {
+                firstPersistError = result.error;
+            }
+            if (result.text.length() >= content.length()) {
                 // 落盘失败或没缩短，避免死循环
-                log("skip persist: toolUseId=" + tid + ", size=" + content.length()
-                        + " chars, no shrinkage after persist attempt");
                 continue;
             }
-            int beforeSize = content.length();
-            int afterSize = persisted.length();
             ToolExecutionResultMessage compacted = original.toBuilder()
-                .contents(TextContent.from(persisted))
+                .contents(TextContent.from(result.text))
                 .build();
             history.set(slot.index(), compacted);
             persistedCount++;
-            log("persisted toolResult #" + persistedCount + ": toolUseId=" + tid
-                    + ", size=" + beforeSize + " -> " + afterSize + " chars (saved " + (beforeSize - afterSize) + ")");
 
             // 重新累加，保持与 Python 版本 `total = sum(...)` 等价的语义
             int newTotal = 0;
@@ -161,10 +158,22 @@ public class BudgetMessageCompactor {
             }
             total = newTotal;
         }
-        int savedChars = Math.max(0, originalTotal - total);
-        int percent = originalTotal > 0 ? (int) Math.round(savedChars * 100.0 / originalTotal) : 0;
-        log("compaction done: persisted=" + persistedCount + "/" + slots.size()
-                + ", total=" + originalTotal + " -> " + total + " chars (saved " + savedChars + ", " + percent + "%)");
+
+        // 唯一一行关键信息：压缩的条数 + 字符变化；如果一次都没有成功落盘，
+        // 说明虽然超预算但单条都已低于阈值或落盘全部失败，也要输出说明。
+        if (persistedCount > 0) {
+            int savedChars = Math.max(0, originalTotal - total);
+            int percent = originalTotal > 0 ? (int) Math.round(savedChars * 100.0 / originalTotal) : 0;
+            String suffix = firstPersistError == null ? "" : " (persist err: " + firstPersistError + ")";
+            log("persisted " + persistedCount + " toolResults: " + originalTotal + " -> " + total
+                    + " chars (saved " + percent + "%)" + suffix);
+        } else {
+            String reason = firstPersistError != null
+                    ? "persist failed: " + firstPersistError
+                    : "no single toolResult exceeded " + PERSIST_THRESHOLD + " chars";
+            log("skipped: over budget " + originalTotal + " > " + maxBytes
+                    + " but " + reason + " (tail=" + slots.size() + " toolResults)");
+        }
         return history;
     }
 
@@ -176,10 +185,13 @@ public class BudgetMessageCompactor {
      * <pre>
      * f"&lt;persisted-output&gt;\nFull output: {path}\nPreview:\n{output[:2000]}\n&lt;/persisted-output&gt;"
      * </pre>
+     *
+     * <p>任何错误都不会直接打日志，而是放进 {@link PersistResult#error}，由调用方
+     * 合并到本次压缩的唯一一行日志里，避免破坏"每次调用只输出 1 行"的约定。
      */
-    static String persistLargeOutput(String toolUseId, String output) {
+    static PersistResult persistLargeOutput(String toolUseId, String output) {
         if (output == null || output.length() <= PERSIST_THRESHOLD) {
-            return output;
+            return new PersistResult(output, null);
         }
         try {
             Files.createDirectories(TOOL_RESULTS_DIR);
@@ -194,17 +206,10 @@ public class BudgetMessageCompactor {
             String preview = output.substring(0, Math.min(PREVIEW_CHARS, output.length()));
             String placeholder = "<persisted-output>\nFull output: " + path.toAbsolutePath()
                     + "\nPreview:\n" + preview + "\n</persisted-output>";
-            log("wrote toolResult to disk: toolUseId=" + safeId
-                    + ", path=" + path.toAbsolutePath()
-                    + ", size=" + output.length() + " chars");
-            return placeholder;
+            return new PersistResult(placeholder, null);
         } catch (IOException e) {
-            // 落盘失败就原样返回，宁可超预算也不丢内容
-            log("persist FAILED: toolUseId=" + (toolUseId == null ? UNKNOWN_TOOL_ID : toolUseId)
-                    + ", size=" + (output == null ? 0 : output.length())
-                    + " chars, reason=" + e.getClass().getSimpleName() + ": " + e.getMessage()
-                    + " — keeping original output to avoid data loss");
-            return output;
+            // 落盘失败就原样返回，宁可超预算也不丢内容；错误留给调用方合并到唯一一行日志
+            return new PersistResult(output, e.getClass().getSimpleName() + ": " + e.getMessage());
         }
     }
 
@@ -232,4 +237,10 @@ public class BudgetMessageCompactor {
 
     /** 历史中可压缩工具结果的位置 + 当前文本长度。 */
     private record Slot(int index, int length) {}
+
+    /**
+     * {@link #persistLargeOutput} 的返回包：落盘后的占位文本 + 落盘过程产生的
+     * 可选错误信息。这样调用方就能把错误合并到当次压缩的唯一一行日志里。
+     */
+    record PersistResult(String text, String error) {}
 }

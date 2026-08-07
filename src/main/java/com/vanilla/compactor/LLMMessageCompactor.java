@@ -11,6 +11,7 @@ import java.util.stream.Collectors;
 
 import cn.hutool.json.JSONUtil;
 import com.vanilla.util.ChatMessageJsonConvertor;
+import com.vanilla.util.ConsoleRenderer;
 
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
@@ -54,8 +55,7 @@ public class LLMMessageCompactor {
 
     /** 写入紧凑日志，自动 flush 以便在交互式终端里实时可见。 */
     private static void log(String message) {
-        System.out.println(LOG_PREFIX + message);
-        System.out.flush();
+        ConsoleRenderer.getShared().printDebug(LOG_PREFIX, message);
     }
 
     /**
@@ -88,16 +88,14 @@ public class LLMMessageCompactor {
      * </ol>
      */
     public static List<ChatMessage> llmCompact(List<ChatMessage> history, ChatModel client) {
-        log("enter llmCompact: historySize=" + history.size() + ", contextLimit=" + CONTEXT_LIMIT);
         int total = history.stream().mapToInt(LLMMessageCompactor::textLength).sum();
         if (total < CONTEXT_LIMIT) {
-            log("skip llm: total=" + total + " chars already within contextLimit=" + CONTEXT_LIMIT);
+            log("skipped: " + total + " chars < CONTEXT_LIMIT " + CONTEXT_LIMIT);
             return history;
         }
 
-        writeTranscript(history);
+        String transcriptError = writeTranscript(history);
 
-        log("start llm compaction: total=" + total + " chars > contextLimit=" + CONTEXT_LIMIT);
         String conversation = history.stream().map(ChatMessageJsonConvertor.INSTANCE::convert)
             .collect(Collectors.joining("\n\n"));
 
@@ -111,19 +109,16 @@ public class LLMMessageCompactor {
                             UserMessage.from(userPrompt))
                     .build());
         } catch (RuntimeException e) {
-            // LLM 失败时要把 transcript 留给后续排查，不再清空 history 以免丢上下文。
-            log("llm compaction FAILED: " + e.getClass().getSimpleName() + ": " + e.getMessage()
-                    + " — history kept unchanged, transcript preserved for inspection");
+            // 失败路径单独一行：必须可见，绝不与成功行合并
+            log("compaction failed: " + e.getClass().getSimpleName() + " (history unchanged)");
             return history;
         }
 
         AiMessage aiMessage = response == null ? null : response.aiMessage();
         String summary = aiMessage == null || aiMessage.text() == null ? "" : aiMessage.text();
-        log("summary generated: conversation=" + conversation.length() + " chars, summary="
-                + summary.length() + " chars");
 
         if (summary.isEmpty()) {
-            log("llm compaction produced empty summary: keeping original history");
+            log("compaction produced empty summary (history unchanged)");
             return history;
         }
 
@@ -138,17 +133,20 @@ public class LLMMessageCompactor {
         history.clear();
         history.addAll(systemMessages);
         history.add(UserMessage.from("[Compressed summary]\n" + summary));
-        log("llm done: history=" + beforeCount + " -> " + history.size()
-                + " msgs, chars=" + total + " -> " + textLength(history.get(history.size() - 1))
-                + " (system preserved=" + systemMessages.size() + ")");
+        // 唯一一行成功汇总：原字符数 -> 摘要字符数 + 消息条数前后
+        log("compacted: " + beforeCount + " msgs, " + total + " -> "
+                + textLength(history.get(history.size() - 1)) + " chars"
+                + (transcriptError == null ? "" : " (transcript " + transcriptError + ")"));
         return history;
     }
 
     /**
      * 把压缩前的整段聊天历史写成 JSONL，文件名带时间戳，避免相互覆盖。
-     * 失败时仅 warn，不抛异常——压缩仍可继续，只是失去事后排查能力。
+     *
+     * @return 成功时返回 {@code null}；失败时返回一段简短错误描述（供调用方合并
+     *         到当次压缩的唯一一行日志里）。
      */
-    private static void writeTranscript(List<ChatMessage> history) {
+    private static String writeTranscript(List<ChatMessage> history) {
         try {
             Files.createDirectories(TRANSCRIPT_DIR);
             Path transcript = Files.createFile(
@@ -157,10 +155,9 @@ public class LLMMessageCompactor {
                     .map(ChatMessageJsonConvertor.INSTANCE::convert)
                     .collect(Collectors.joining("\n"));
             Files.writeString(transcript, content, StandardCharsets.UTF_8);
-            log("transcript written: path=" + transcript.toAbsolutePath()
-                    + ", messages=" + history.size() + ", bytes=" + content.length());
+            return null;
         } catch (IOException e) {
-            log("transcript写入失败: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            return "write FAILED " + e.getClass().getSimpleName() + ": " + e.getMessage();
         }
     }
 

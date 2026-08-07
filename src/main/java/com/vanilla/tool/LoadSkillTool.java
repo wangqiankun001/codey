@@ -25,8 +25,4 @@ public class LoadSkillTool implements Tool {
         return SkillManager.getFullContent(JSONUtil.parseObj(request.arguments()).getStr("skillName"));
     }
 
-    public static void main(String[] args) {
-        System.out.println(new LoadSkillTool().getSpecification().toJson());
-    }
-
 }

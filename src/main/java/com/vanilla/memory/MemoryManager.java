@@ -12,6 +12,7 @@ import java.util.stream.Stream;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vanilla.util.ChatMessageJsonConvertor;
+import com.vanilla.util.ConsoleRenderer;
 
 import cn.hutool.core.util.StrUtil;
 import dev.langchain4j.data.message.AiMessage;
@@ -90,7 +91,7 @@ public class MemoryManager {
             return Files.list(dir).filter(mem -> !MEMORY_INDEX_NAME.equals(mem.getFileName().toString()))
                     .map(p -> p.getFileName().toString()).toList();
         } catch (IOException e) {
-            System.out.println("memory load failed.");
+            ConsoleRenderer.getShared().printError("memory load failed.");
             return List.of();
         }
     }
@@ -121,7 +122,7 @@ public class MemoryManager {
         try {
             return Files.readString(path);
         } catch (IOException e) {
-            System.out.println("读取记忆文件作为字符串失败" + fileName + ".md");
+            ConsoleRenderer.getShared().printError("读取记忆文件作为字符串失败" + fileName + ".md");
             return "";
         }
     }
@@ -148,7 +149,7 @@ public class MemoryManager {
         try {
             wrapper = mapper.readValue(aiMessage.text(), MemoryWrapper.class);
         } catch (JsonProcessingException e) {
-            System.out.println("[extractMemory] ai提取记忆内容格式不符合格式: " + aiMessage.text());
+            ConsoleRenderer.getShared().printError("[extractMemory] ai提取记忆内容格式不符合格式: " + aiMessage.text());
             return;
         }
         wrapper.memories().forEach(m -> writeMemory(m));
@@ -166,7 +167,7 @@ public class MemoryManager {
                     memory.type().getValue(), memory.body());
             Files.writeString(path, content);
         } catch (Exception e) {
-            System.out.println("记忆文件创建失败: " + memory.name());
+            ConsoleRenderer.getShared().printError("记忆文件创建失败: " + memory.name());
             return;
         }
         rebuildIndex();
@@ -182,13 +183,13 @@ public class MemoryManager {
             try {
                 file.createNewFile();
             } catch (IOException e) {
-                System.out.println("文件索引创建失败");
+                ConsoleRenderer.getShared().printError("文件索引创建失败");
             }
         }
         try {
             Files.writeString(file.toPath(), memoryIndexContent);
         } catch (IOException e) {
-            System.out.println("文件索引内容写入失败");
+            ConsoleRenderer.getShared().printError("文件索引内容写入失败");
         }
     }
 
@@ -244,7 +245,7 @@ public class MemoryManager {
         try {
             wrapper = mapper.readValue(aiMessage.text(), MemoryWrapper.class);
         } catch (JsonProcessingException e) {
-            System.out.println("[consolidateMemories] ai提取记忆内容格式不符合格式: " + aiMessage.text());
+            ConsoleRenderer.getShared().printError("[consolidateMemories] ai提取记忆内容格式不符合格式: " + aiMessage.text());
             return;
         }
         try {
@@ -254,7 +255,7 @@ public class MemoryManager {
                 }
             });
         } catch (IOException e) {
-            System.out.println("过期记忆删除失败");
+            ConsoleRenderer.getShared().printError("过期记忆删除失败");
         }
         wrapper.memories().forEach(MemoryManager::writeMemory);
     }

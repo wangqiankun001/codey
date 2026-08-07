@@ -248,6 +248,26 @@ public final class ConsoleRenderer {
         out.println();
     }
 
+    /**
+     * 渲染压缩器等内部组件发出的调试日志，自动加上来源前缀并 flush。
+     * 颜色使用 DIM，让它在终端里和普通提示区分开但又不抢眼。
+     *
+     * @param prefix  来源前缀，如 {@code "[budget]"}，可为空字符串
+     * @param message 日志正文
+     */
+    public void printDebug(String prefix, String message) {
+        String header = (prefix == null || prefix.isEmpty()) ? "" : prefix + " ";
+        out.println(style(DIM, "  " + header + (message == null ? "" : message)));
+        out.flush();
+    }
+
+    /**
+     * 无前缀版本的调试日志，等价于 {@code printDebug("", message)}。
+     */
+    public void printDebug(String message) {
+        printDebug("", message);
+    }
+
     public void printGoodbye() {
         out.println();
         out.println(style(DIM, "再见，期待下次和你一起写代码。"));
