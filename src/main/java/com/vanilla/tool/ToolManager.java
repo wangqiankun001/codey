@@ -3,6 +3,9 @@ package com.vanilla.tool;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import com.vanilla.tool.task.CreateTaskTool;
+
 import dev.langchain4j.agent.tool.ToolSpecification;
 
 public class ToolManager {
@@ -20,6 +23,7 @@ public class ToolManager {
         register(new TodoWriteTool());
         register(new SpawnSubagentTool());
         register(new LoadSkillTool());
+        register(new CreateTaskTool());
     }
 
     public static void register(Tool tool) {

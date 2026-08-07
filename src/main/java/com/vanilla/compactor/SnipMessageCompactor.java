@@ -3,6 +3,7 @@ package com.vanilla.compactor;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.vanilla.util.ConsoleRenderer;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ChatMessageType;
 import dev.langchain4j.data.message.UserMessage;
@@ -21,7 +22,7 @@ import dev.langchain4j.data.message.UserMessage;
 public class SnipMessageCompactor {
 
     /** 历史长度超过该阈值时触发 snip 压缩。 */
-    public static int MAX_MESSAGE_SIZE = 60;
+    public static int MAX_MESSAGE_SIZE = 80;
 
     /** 头部恒定保留条数。 */
     private static final int KEEP_HEAD_SIZE = 2;
@@ -31,17 +32,13 @@ public class SnipMessageCompactor {
 
     /** 写入紧凑日志，自动 flush 以便在交互式终端里实时可见。 */
     private static void log(String message) {
-        System.out.println(LOG_PREFIX + message);
-        System.out.flush();
+        ConsoleRenderer.getShared().printDebug(LOG_PREFIX, message);
     }
 
     public static List<ChatMessage> snipCompact(List<ChatMessage> history) {
         int size = history.size();
-        log("enter snipCompact: historySize=" + size + ", maxMessageSize=" + MAX_MESSAGE_SIZE
-                + ", keepHead=" + KEEP_HEAD_SIZE + ", keepTail=" + (MAX_MESSAGE_SIZE - KEEP_HEAD_SIZE));
-
         if (size < MAX_MESSAGE_SIZE) {
-            log("skip snip: historySize=" + size + " < maxMessageSize=" + MAX_MESSAGE_SIZE);
+            log("skipped: history=" + size + " < MAX_MESSAGE_SIZE " + MAX_MESSAGE_SIZE);
             return history;
         }
 
@@ -58,13 +55,9 @@ public class SnipMessageCompactor {
 
         int snippedCount = endIdx - startIdx;
         if (snippedCount <= 0) {
-            log("skip snip: snippedCount=" + snippedCount + " (range empty after tool-pullback="
-                    + toolPullback + "), historySize=" + size);
+            log("skipped: head/tail already overlap (size=" + size + ", head=" + startIdx + ", tailKeep=" + keepTail + ")");
             return history;
         }
-        log("snip range selected: indices=[" + startIdx + ", " + endIdx + "), snippedCount=" + snippedCount
-                + ", toolPullback=" + toolPullback + ", retainedHead=" + startIdx
-                + ", retainedTail=" + (size - endIdx));
 
         List<ChatMessage> newHistory = new ArrayList<>();
         newHistory.addAll(history.subList(0, startIdx));
@@ -74,11 +67,8 @@ public class SnipMessageCompactor {
         history.clear();
         history.addAll(newHistory);
 
-        int beforeCount = size;
-        int retainedCount = newHistory.size() - 1; // 扣除合成标记
-        log("snip done: history=" + beforeCount + " -> " + retainedCount + " msgs (+1 marker)"
-                + ", retainedHead=" + startIdx + ", retainedTail=" + (size - endIdx)
-                + ", snippedCount=" + snippedCount);
+        // 唯一一行关键信息：被压缩的条数 + 前后长度
+        log("snipped " + snippedCount + " msgs: " + size + " -> " + history.size());
         return history;
     }
 }

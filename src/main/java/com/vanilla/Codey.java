@@ -1,6 +1,7 @@
 package com.vanilla;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -26,6 +27,7 @@ import com.vanilla.tool.ToolManager;
 import com.vanilla.util.ChatMessageJsonConvertor;
 import com.vanilla.util.ConsoleRenderer;
 
+import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.util.StrUtil;
 
 import org.jline.reader.EndOfFileException;
@@ -47,9 +49,9 @@ import dev.langchain4j.model.output.FinishReason;
 
 public class Codey {
 
-    private static final Path WORKSPACE = Paths.get(System.getProperty("user.dir"));
+    public static final Path WORKSPACE = Paths.get(System.getProperty("user.dir"));
 
-    private static final Path CONFIG_DIR = WORKSPACE.resolve(".codey");
+    public static final Path CONFIG_DIR = WORKSPACE.resolve(".codey");
 
     private final List<ChatMessage> history = new ArrayList<>();
     private final ConsoleRenderer console = new ConsoleRenderer(System.out);
@@ -200,19 +202,19 @@ public class Codey {
 
     private static String readableError(RuntimeException error,List<ChatMessage> history) {
         String message = error.getMessage();
-        if (message == null || message.isBlank()) {
-            return "请求 AI 时发生未知错误，请稍后重试。";
-        }
-
-        Path path = CONFIG_DIR.resolve(Paths.get("error", System.currentTimeMillis() + "-" + message + ".jsonl"));
+        Path path = CONFIG_DIR.resolve("error").resolve(DateUtil.now() + ".jsonl");
         try {
             Files.createDirectories(path.getParent());
             Files.createFile(path);
-            String crimeScene = history.stream().map(ChatMessageJsonConvertor.INSTANCE::convert)
-                .collect(Collectors.joining("\n"));
-            Files.writeString(path, crimeScene);
+            String crimeScene = history.stream().map(ChatMessageJsonConvertor.INSTANCE::convert).collect(Collectors.joining("\n"));
+            Files.writeString(path, message);
+            Files.writeString(path, "\n\n");
+            Files.writeString(path, crimeScene, StandardCharsets.UTF_8);
         } catch (IOException e) {
-            ConsoleRenderer.getShared().printWarning("错误日志文件写入失败");
+
+        }
+        if (message == null || message.isBlank()) {
+            return "请求 AI 时发生未知错误，请稍后重试。";
         }
         return "请求 AI 失败：" + message;
     }

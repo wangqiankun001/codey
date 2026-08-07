@@ -3,6 +3,7 @@ package com.vanilla.compactor;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.vanilla.util.ConsoleRenderer;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ChatMessageType;
 import dev.langchain4j.data.message.TextContent;
@@ -30,8 +31,7 @@ public class MicoMessageCompactor {
 
     /** 写入紧凑日志，自动 flush 以便在交互式终端里实时可见。 */
     private static void log(String message) {
-        System.out.println(LOG_PREFIX + message);
-        System.out.flush();
+        ConsoleRenderer.getShared().printDebug(LOG_PREFIX, message);
     }
 
     public static List<ChatMessage> micoCompact(List<ChatMessage> history) {
@@ -42,18 +42,12 @@ public class MicoMessageCompactor {
             }
         }
         int totalToolResults = tooUseResultIdxs.size();
-        log("enter micoCompact: historySize=" + history.size()
-                + ", toolResults=" + totalToolResults
-                + ", keepRecent=" + KEEP_RECENT
-                + ", toolUseSizeThreshold=" + TOOL_USE_SIZE_THRESHOLD);
-
         if (totalToolResults < KEEP_RECENT) {
-            log("skip mico: toolResults=" + totalToolResults + " < keepRecent=" + KEEP_RECENT);
+            log("skipped: toolResults=" + totalToolResults + " < KEEP_RECENT " + KEEP_RECENT);
             return history;
         }
 
         List<Integer> targets = new ArrayList<>(tooUseResultIdxs.subList(0, totalToolResults - KEEP_RECENT));
-        int overThreshold = 0;
         int compacted = 0;
         int skippedBelowThreshold = 0;
         for (Integer idx : targets) {
@@ -66,24 +60,19 @@ public class MicoMessageCompactor {
                 skippedBelowThreshold++;
                 continue;
             }
-            overThreshold++;
             history.set(idx, toolExecutionResultMessage.toBuilder()
                     .contents(TextContent.from("[Earlier tool result compacted. Re-run if needed.]"))
                     .build());
             compacted++;
         }
 
-        log("mico candidates: candidates=" + targets.size()
-                + ", overThreshold=" + overThreshold
-                + ", skippedBelowThreshold=" + skippedBelowThreshold
-                + ", compacted=" + compacted
-                + ", retainedRecent=" + KEEP_RECENT);
+        // 唯一一行关键信息：被压缩数 / 候选数，必要时附上低于阈值的跳过数
         if (compacted > 0) {
-            log("mico done: historySize=" + history.size()
-                    + ", toolResultsCompacted=" + compacted
-                    + " of " + totalToolResults);
+            log("compacted " + compacted + "/" + targets.size() + " early toolResults"
+                    + (skippedBelowThreshold > 0 ? " (skipped " + skippedBelowThreshold + " below threshold)" : ""));
         } else {
-            log("mico no-op: no tool_result over threshold, historySize=" + history.size());
+            log("skipped: " + targets.size() + " early toolResults all below threshold "
+                    + TOOL_USE_SIZE_THRESHOLD);
         }
         return history;
     }
