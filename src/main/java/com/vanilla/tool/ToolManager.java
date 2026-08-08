@@ -4,7 +4,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.vanilla.tool.task.ClaimTaskTool;
+import com.vanilla.tool.task.CompleteTaskTool;
 import com.vanilla.tool.task.CreateTaskTool;
+import com.vanilla.tool.task.ListTasksTool;
 
 import dev.langchain4j.agent.tool.ToolSpecification;
 
@@ -24,6 +27,10 @@ public class ToolManager {
         register(new SpawnSubagentTool());
         register(new LoadSkillTool());
         register(new CreateTaskTool());
+        register(new ListTasksTool());
+        register(new GetTaskTool());
+        register(new ClaimTaskTool());
+        register(new CompleteTaskTool());
     }
 
     public static void register(Tool tool) {

@@ -202,7 +202,7 @@ public class Codey {
 
     private static String readableError(RuntimeException error,List<ChatMessage> history) {
         String message = error.getMessage();
-        Path path = CONFIG_DIR.resolve("error").resolve(DateUtil.now() + ".jsonl");
+        Path path = CONFIG_DIR.resolve("error").resolve(System.currentTimeMillis() + ".jsonl");
         try {
             Files.createDirectories(path.getParent());
             Files.createFile(path);

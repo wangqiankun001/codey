@@ -15,7 +15,6 @@ import com.vanilla.util.ChatMessageJsonConvertor;
 import com.vanilla.util.ConsoleRenderer;
 
 import cn.hutool.core.util.StrUtil;
-import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.request.ChatRequest;
@@ -135,6 +134,34 @@ public class MemoryManager {
                 content.get(1));
     }
 
+    private static String stripJsonWrapper(String raw) {
+        if (StrUtil.isBlank(raw)) {
+            return raw;
+        }
+        String trimmed = raw.trim();
+        // 剥离 ```json ... ``` 或 ``` ... ``` Markdown 代码块包装
+        if (trimmed.startsWith("```")) {
+            int firstNewline = trimmed.indexOf('\n');
+            int lastFence = trimmed.lastIndexOf("```");
+            if (firstNewline > 0 && lastFence > firstNewline) {
+                trimmed = trimmed.substring(firstNewline + 1, lastFence).trim();
+            }
+        }
+        return trimmed;
+    }
+
+    private static MemoryWrapper parseMemoryWrapper(String context, String raw) {
+        String cleaned = stripJsonWrapper(raw);
+        try {
+            return mapper.readValue(cleaned, MemoryWrapper.class);
+        } catch (JsonProcessingException e) {
+            ConsoleRenderer.getShared().printError(
+                    "[" + context + "] ai提取记忆内容格式不符合格式: " + cleaned
+                            + " | parseError=" + e.getOriginalMessage());
+            return null;
+        }
+    }
+
     public static void extractMemory(List<ChatMessage> history, OpenAiChatModel client) {
         String dialogue = history.stream().map(ChatMessageJsonConvertor.INSTANCE::convert)
                 .collect(Collectors.joining("\n"));
@@ -144,12 +171,8 @@ public class MemoryManager {
                 .messages(UserMessage.from(prompt))
                 .responseFormat(MEMORY_RESPONSE_FORMAT)
                 .build());
-        AiMessage aiMessage = response.aiMessage();
-        MemoryWrapper wrapper;
-        try {
-            wrapper = mapper.readValue(aiMessage.text(), MemoryWrapper.class);
-        } catch (JsonProcessingException e) {
-            ConsoleRenderer.getShared().printError("[extractMemory] ai提取记忆内容格式不符合格式: " + aiMessage.text());
+        MemoryWrapper wrapper = parseMemoryWrapper("extractMemory", response.aiMessage().text());
+        if (wrapper == null) {
             return;
         }
         wrapper.memories().forEach(m -> writeMemory(m));
@@ -240,12 +263,8 @@ public class MemoryManager {
                 .messages(UserMessage.from(prompt))
                 .responseFormat(MEMORY_RESPONSE_FORMAT)
                 .build());
-        MemoryWrapper wrapper;
-        AiMessage aiMessage = response.aiMessage();
-        try {
-            wrapper = mapper.readValue(aiMessage.text(), MemoryWrapper.class);
-        } catch (JsonProcessingException e) {
-            ConsoleRenderer.getShared().printError("[consolidateMemories] ai提取记忆内容格式不符合格式: " + aiMessage.text());
+        MemoryWrapper wrapper = parseMemoryWrapper("consolidateMemories", response.aiMessage().text());
+        if (wrapper == null) {
             return;
         }
         try {

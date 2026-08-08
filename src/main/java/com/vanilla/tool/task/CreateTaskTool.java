@@ -56,7 +56,7 @@ public class CreateTaskTool implements Tool {
         String step = param.blockedBy().isEmpty() ? "empty"
                 : "(" + param.blockedBy().stream().collect(Collectors.joining(",")) + ")";
         Task task = createAndSaveTask(param.subject(), param.description(), "agent", param.blockedBy());
-        return String.format("Created taskId:%s, subject:%s, blockedBy:%s", task.id(), task.subject(), step);
+        return String.format("Created taskId:%s, subject:%s, blockedBy:%s", task.getId(), task.getSubject(), step);
     }
 
     public static Task createAndSaveTask(String subject, String description, String owner, List<String> blockedBy) {
@@ -67,19 +67,7 @@ public class CreateTaskTool implements Tool {
                 TaskStatus.PENDING,
                 owner,
                 blockedBy);
-        saveTask(task);
+        Task.saveTask(task);
         return task;
     }
-
-    public static void saveTask(Task task) {
-        Path path = TASK_DIR.resolve(task.id() + ".json");
-        try {
-            Files.createDirectories(path.getParent());
-            Files.createFile(path);
-            Files.writeString(path, OM.writeValueAsString(task), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new RuntimeException("task 写入失败：" + e.getMessage());
-        }
-    }
-
 }
