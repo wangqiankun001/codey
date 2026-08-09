@@ -1,39 +1,45 @@
 package com.vanilla.tool.cron;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.regex.Pattern;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
+import cn.hutool.json.JSONUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vanilla.Codey;
+import com.vanilla.cron.CronEntry;
+import com.vanilla.cron.CronScheduler;
 import com.vanilla.tool.Tool;
-
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.UUID;
+
+/** Persist a new cron entry to {@code .codey/crons/} and trigger an immediate scan. */
 public class ScheduleCronTool implements Tool {
+    static final String NAME = "schedule_cron";
 
-    private static final Pattern CRON_5_FIELD = Pattern.compile(
-            "^\\s*(\\S+)\\s+(\\S+)\\s+(\\S+)\\s+(\\S+)\\s+(\\S+)\\s*$");
-
-    private static final ObjectMapper om = new ObjectMapper();
+    private static final String DESCRIPTION =
+            "Schedule a recurring or one-shot cron job. The job fires by injecting the given "
+                    + "prompt into the agent at the next matching wall-clock minute. Inputs: "
+                    + "cron (5-field expression, e.g. \"0 9 * * *\"), prompt (text to inject), "
+                    + "recurring (default true; false for one-shot), durable (default false).";
 
     @Override
     public ToolSpecification getSpecification() {
         return ToolSpecification.builder()
-                .name("schedule_cron")
-                .description("Schedule a cron job. cron is 5-field: min hour dom month dow. "
-                        + "recurring defaults to true; durable defaults to false.")
+                .name(NAME)
+                .description(DESCRIPTION)
                 .parameters(JsonObjectSchema.builder()
-                        .addStringProperty("cron", "5-field cron expression")
-                        .addStringProperty("prompt", "Message to inject when fired")
-                        .addBooleanProperty("recurring", "true=recurring, false=one-shot")
-                        .addBooleanProperty("durable", "true=persist to disk")
+                        .addStringProperty("cron", "5-field cron expression, e.g. \"0 9 * * *\"")
+                        .addStringProperty("prompt", "Text to inject into the agent when the job fires")
+                        .addBooleanProperty("recurring", "If true (default) the job keeps firing every match; if false it runs once then is deleted")
+                        .addBooleanProperty("durable", "Reserved persistence flag (default false); accepted for forward compatibility")
                         .required("cron", "prompt")
                         .build())
                 .build();
@@ -41,44 +47,101 @@ public class ScheduleCronTool implements Tool {
 
     @Override
     public String execute(ToolExecutionRequest request) {
-        record ScheduleParam(String cron, String prompt, Boolean recurring, Boolean durable) {
-        }
-        ScheduleParam param;
+        Map<String, Object> args;
         try {
-            param = om.readValue(request.arguments(), ScheduleParam.class);
-        } catch (JsonProcessingException e) {
-            return "Error: invalid arguments: " + (e.getOriginalMessage() == null ? e.getMessage() : e.getOriginalMessage());
+            args = JSONUtil.parseObj(request.arguments());
+        } catch (RuntimeException e) {
+            return "Error: arguments is not valid JSON: " + e.getMessage();
         }
-        if (param == null || param.cron() == null || param.cron().isBlank()) {
-            return "Error: cron cannot be empty.";
+
+        String cron = strArg(args, "cron");
+        String prompt = strArg(args, "prompt");
+        if (cron == null || cron.isBlank()) {
+            return "Error: 'cron' is required";
         }
-        if (!CRON_5_FIELD.matcher(param.cron()).matches()) {
-            return "Error: cron must be a 5-field expression (min hour dom month dow).";
+        if (prompt == null || prompt.isBlank()) {
+            return "Error: 'prompt' is required";
         }
-        if (param.prompt() == null || param.prompt().isBlank()) {
-            return "Error: prompt cannot be empty.";
-        }
-        boolean recurring = param.recurring() == null ? true : param.recurring();
-        boolean durable = param.durable() == null ? false : param.durable();
-        Path dir = Codey.CONFIG_DIR.resolve("cron");
+        boolean recurring = boolArg(args, "recurring", true);
+        boolean durable = boolArg(args, "durable", false);
+
+        String id = newId();
+        Path file = fileFor(id);
+
+        CronEntry entry = new CronEntry();
+        entry.setId(id);
+        entry.setCron(cron);
+        entry.setPrompt(prompt);
+        entry.setRecurring(recurring);
+        entry.setDurable(durable);
+
         try {
-            Files.createDirectories(dir);
-            String filename = "cron_" + System.currentTimeMillis() + ".json";
-            Path path = dir.resolve(filename);
-            String json = om.writeValueAsString(new ScheduleParam(
-                    param.cron(), param.prompt(), recurring, durable));
-            Files.writeString(path, json, StandardCharsets.UTF_8);
-            return "Scheduled cron job: id=" + filename
-                    + ", cron=" + param.cron()
-                    + ", recurring=" + recurring
-                    + ", durable=" + durable;
+            writeEntry(file, entry);
         } catch (IOException e) {
             return "Error: failed to persist cron job: " + e.getMessage();
         }
+
+        // Make the freshly-written file visible to the scheduler right away
+        // instead of waiting for the next 10-second scan tick.
+        CronScheduler.getInstance().runScan();
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("scheduled", true);
+        payload.put("job_id", id);
+        payload.put("cron", cron);
+        payload.put("recurring", recurring);
+        payload.put("durable", durable);
+        payload.put("file", file.toString());
+        return JSONUtil.toJsonPrettyStr(payload);
     }
 
-    /** 暴露 cron 目录给平台级调度器（外部运行器）按需消费。 */
+    // ---- helpers ------------------------------------------------------------------
+
+    /** Directory used by the scheduler for persisted cron state. */
     public static Path cronDir() {
-        return Paths.get(System.getProperty("user.dir"), ".codey", "cron");
+        return Codey.CONFIG_DIR.resolve("crons");
+    }
+
+    /** Build the canonical file name for a given id. */
+    public static String fileNameFor(String id) {
+        return "cron_" + id + ".json";
+    }
+
+    private static Path fileFor(String id) {
+        return cronDir().resolve(fileNameFor(id));
+    }
+
+    /** Unique enough id: millis + short random suffix to avoid same-millisecond collisions. */
+    static String newId() {
+        return System.currentTimeMillis() + "_" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    private static void writeEntry(Path file, CronEntry entry) throws IOException {
+        Path parent = file.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        ObjectMapper mapper = new ObjectMapper();
+        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Files.writeString(tmp, mapper.writeValueAsString(entry), StandardCharsets.UTF_8);
+        try {
+            Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (AtomicMoveNotSupportedException unsupported) {
+            // Some Windows / file-system combos don't support ATOMIC_MOVE;
+            // fall back to a non-atomic replace so the feature still works.
+            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private static String strArg(Map<String, Object> args, String key) {
+        Object v = args.get(key);
+        return v == null ? null : String.valueOf(v);
+    }
+
+    private static boolean boolArg(Map<String, Object> args, String key, boolean def) {
+        Object v = args.get(key);
+        if (v instanceof Boolean b) return b;
+        if (v == null) return def;
+        return Boolean.parseBoolean(String.valueOf(v));
     }
 }

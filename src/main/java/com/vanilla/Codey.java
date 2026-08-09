@@ -11,6 +11,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import com.vanilla.backgroundtask.BackgroundTaskUtil;
+import com.vanilla.cron.CronMessageInjector;
+import com.vanilla.cron.CronScheduler;
 import com.vanilla.backgroundtask.BackgroundTaskUtil.BackgroundTask;
 import com.vanilla.compactor.BudgetMessageCompactor;
 import com.vanilla.compactor.LLMMessageCompactor;
@@ -65,6 +67,7 @@ public class Codey {
     public Codey() {
         // 让子 Agent 等没有直接持有 console 的组件也能拿到同一个渲染器。
         ConsoleRenderer.setShared(console);
+        CronScheduler.getInstance().start();
         try {
             terminal = TerminalBuilder.builder().system(true).build();
             lineReader = LineReaderBuilder.builder().terminal(terminal).build();
@@ -140,6 +143,10 @@ public class Codey {
     }
 
     private synchronized AiMessage agentLoop(List<ChatMessage> history, String userInput) {
+        var scheduled = CronMessageInjector.drainDueMessages();
+        if (scheduled != null) {
+            history.add(scheduled);
+        }
         // 在压缩/记忆注入之前先冻结本次会话的原始快照，压缩会改写 history，
         // 若不预先快照，MemoryManager.extractMemory 会把压缩后的版本误当原始对话。
         List<ChatMessage> preCompact = List.of(history.toArray(ChatMessage[]::new));

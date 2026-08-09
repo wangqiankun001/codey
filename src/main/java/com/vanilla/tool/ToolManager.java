@@ -4,6 +4,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.vanilla.tool.cron.CancelCronTool;
+import com.vanilla.tool.cron.CronStatusTool;
+import com.vanilla.tool.cron.ListCronsTool;
+import com.vanilla.tool.cron.ScheduleCronTool;
 import com.vanilla.tool.task.ClaimTaskTool;
 import com.vanilla.tool.task.CompleteTaskTool;
 import com.vanilla.tool.task.CreateTaskTool;
@@ -12,9 +16,7 @@ import com.vanilla.tool.task.ListTasksTool;
 import dev.langchain4j.agent.tool.ToolSpecification;
 
 public class ToolManager {
-
     private static Map<String, ToolSpecification> TOOL_SPECIFICATIONS = new HashMap<>();
-
     private static Map<String, Tool> HANDLERS = new HashMap<>();
 
     static {
@@ -31,6 +33,10 @@ public class ToolManager {
         register(new GetTaskTool());
         register(new ClaimTaskTool());
         register(new CompleteTaskTool());
+        register(new ScheduleCronTool());
+        register(new CancelCronTool());
+        register(new ListCronsTool());
+        register(new CronStatusTool());
     }
 
     public static void register(Tool tool) {

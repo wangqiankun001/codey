@@ -1,49 +1,59 @@
 package com.vanilla.tool.cron;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-
-import com.vanilla.tool.Tool;
-
 import cn.hutool.json.JSONUtil;
+import com.vanilla.cron.CronScheduler;
+import com.vanilla.tool.Tool;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/** Cancel a previously-scheduled cron job by id. */
 public class CancelCronTool implements Tool {
+    static final String NAME = "cancel_cron";
+
+    private static final String DESCRIPTION =
+            "Cancel a cron job previously created with schedule_cron. The id is the "
+                    + "value returned by schedule_cron. Returns cancelled=false if no such job exists.";
 
     @Override
     public ToolSpecification getSpecification() {
         return ToolSpecification.builder()
-                .name("cancel_cron")
-                .description("Cancel a previously scheduled cron job by its jobId.")
+                .name(NAME)
+                .description(DESCRIPTION)
                 .parameters(JsonObjectSchema.builder()
-                        .addStringProperty("jobId", "The cron job filename (e.g. cron_1717000000000.json)")
-                        .required("jobId")
+                        .addStringProperty("job_id", "Job id returned by schedule_cron")
+                        .required("job_id")
                         .build())
                 .build();
     }
 
     @Override
     public String execute(ToolExecutionRequest request) {
-        String jobId = JSONUtil.parseObj(request.arguments()).getStr("jobId");
-        if (jobId == null || jobId.isBlank()) {
-            return "Error: jobId cannot be empty.";
-        }
-        // 防止路径逃逸：只允许字母数字、点、下划线、连字符。
-        if (!jobId.matches("[A-Za-z0-9._-]+")) {
-            return "Error: invalid jobId.";
-        }
-        Path path = ScheduleCronTool.cronDir().resolve(jobId);
-        if (!Files.exists(path)) {
-            return "Cron job not found: " + jobId;
-        }
+        Map<String, Object> args;
         try {
-            Files.delete(path);
-            return "Cancelled cron job: " + jobId;
-        } catch (IOException e) {
-            return "Error: failed to cancel cron job: " + e.getMessage();
+            args = JSONUtil.parseObj(request.arguments());
+        } catch (RuntimeException e) {
+            return "Error: arguments is not valid JSON: " + e.getMessage();
         }
+        Object raw = args.get("job_id");
+        if (raw == null) {
+            return "Error: 'job_id' is required";
+        }
+        String jobId = String.valueOf(raw).trim();
+        if (jobId.isEmpty()) {
+            return "Error: 'job_id' is required";
+        }
+
+        // CronScheduler.cancel expects the on-disk filename (e.g. cron_<id>.json).
+        String fileName = ScheduleCronTool.fileNameFor(jobId);
+        boolean cancelled = CronScheduler.getInstance().cancel(fileName);
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("cancelled", cancelled);
+        payload.put("job_id", jobId);
+        return JSONUtil.toJsonPrettyStr(payload);
     }
 }
