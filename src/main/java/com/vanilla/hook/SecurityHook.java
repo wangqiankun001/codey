@@ -1,11 +1,14 @@
 package com.vanilla.hook;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Scanner;
 
 import com.vanilla.util.ConsoleRenderer;
 
@@ -18,8 +21,9 @@ public class SecurityHook implements Hook {
 
     private static final List<String> DESTRUCTIVE = List.of("rm ", "> /etc/", "chmod 777");
 
-    private final ConsoleRenderer console = new ConsoleRenderer(System.out);
-    private final Scanner sc = new Scanner(System.in);
+    private final ConsoleRenderer console = ConsoleRenderer.getShared();
+    private final BufferedReader stdin = new BufferedReader(
+            new InputStreamReader(System.in, StandardCharsets.UTF_8));
 
     @Override
     public String id() {
@@ -102,6 +106,11 @@ public class SecurityHook implements Hook {
     /**
      * 渲染一个「需要确认」的 Hook 卡片，然后等待用户输入 y/N。
      *
+     * <p>注意：必须保证读 stdin 与 JLine 不冲突。在 Codey 主循环中确认提示
+     * 来自后台任务线程时，读取 System.in 仍可能与 LineReader 抢锁；当前
+     * 实现由主 Agent 同步串行调用 Hook，预输入已通过 LineReader 缓冲，
+     * 这里附加同步读取是安全的。</p>
+     *
      * @return true 表示用户放行；false 表示拒绝
      */
     private boolean confirmWithUser(ToolExecutionRequest toolReq, String event,
@@ -113,8 +122,14 @@ public class SecurityHook implements Hook {
 
         console.printHookBlock(getClass().getSimpleName(), event, "需要确认", detail);
         console.printWarning("Allow? [y/N] ");
-        String choice = sc.nextLine().trim().toLowerCase();
-        boolean allowed = "y".equals(choice) || "yes".equals(choice);
+        String choice = null;
+        try {
+            choice = stdin.readLine();
+        } catch (IOException ignored) {
+            // EOF / 关闭 → 视为拒绝
+        }
+        boolean allowed = choice != null
+                && (choice.trim().equalsIgnoreCase("y") || choice.trim().equalsIgnoreCase("yes"));
         if (!allowed) {
             console.printHookBlock(getClass().getSimpleName(), event, "blocked", List.of(
                     "tool   " + toolReq.name(),

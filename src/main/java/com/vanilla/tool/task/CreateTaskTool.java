@@ -1,9 +1,5 @@
 package com.vanilla.tool.task;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Random;
 import java.util.stream.Collectors;
@@ -16,12 +12,10 @@ import com.vanilla.tool.Tool;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.model.chat.request.json.JsonArraySchema;
-import dev.langchain4j.model.chat.request.json.JsonIntegerSchema;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
+import dev.langchain4j.model.chat.request.json.JsonStringSchema;
 
 public class CreateTaskTool implements Tool {
-
-    public static final Path TASK_DIR = Codey.CONFIG_DIR.resolve("task");
 
     public static final ObjectMapper OM = new ObjectMapper();
 
@@ -31,12 +25,13 @@ public class CreateTaskTool implements Tool {
     public ToolSpecification getSpecification() {
         return ToolSpecification.builder()
                 .name("create_task")
-                .description("Create a new task with optional blockedBy dependencies.")
+                .description("Create a new task with optional blockedBy dependencies. "
+                        + "blockedBy is a list of taskId strings; pass an empty array when no dependencies.")
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("subject")
                         .addStringProperty("description")
                         .addProperty("blockedBy", JsonArraySchema.builder()
-                                .items(JsonIntegerSchema.builder().build())
+                                .items(JsonStringSchema.builder().build())
                                 .build())
                         .required("subject", "description", "blockedBy")
                         .build())
@@ -51,11 +46,18 @@ public class CreateTaskTool implements Tool {
         try {
             param = OM.readValue(request.arguments(), CreateTaskParam.class);
         } catch (JsonProcessingException e) {
-            return "Create task failed";
+            return "Error: Create task failed: " + e.getOriginalMessage();
         }
-        String step = param.blockedBy().isEmpty() ? "empty"
-                : "(" + param.blockedBy().stream().collect(Collectors.joining(",")) + ")";
-        Task task = createAndSaveTask(param.subject(), param.description(), "agent", param.blockedBy());
+        if (param.subject() == null || param.subject().isBlank()) {
+            return "Error: subject cannot be empty.";
+        }
+        if (param.description() == null || param.description().isBlank()) {
+            return "Error: description cannot be empty.";
+        }
+        List<String> blockedBy = param.blockedBy() == null ? List.of() : param.blockedBy();
+        String step = blockedBy.isEmpty() ? "empty"
+                : "(" + blockedBy.stream().collect(Collectors.joining(",")) + ")";
+        Task task = createAndSaveTask(param.subject(), param.description(), "agent", blockedBy);
         return String.format("Created taskId:%s, subject:%s, blockedBy:%s", task.getId(), task.getSubject(), step);
     }
 

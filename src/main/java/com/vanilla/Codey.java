@@ -74,12 +74,24 @@ public class Codey {
     }
 
     private final OpenAiChatModel client = OpenAiChatModel.builder()
-            .apiKey(System.getenv("OPENAI_API_KEY"))
+            .apiKey(requireEnv("OPENAI_API_KEY"))
             .strictJsonSchema(true)
-            .baseUrl(System.getenv("OPENAI_BASE_URL"))
-            .modelName(System.getenv("OPENAI_MODEL_NAME"))
+            .baseUrl(requireEnv("OPENAI_BASE_URL"))
+            .modelName(requireEnv("OPENAI_MODEL_NAME"))
             .customParameters(Map.of("reasoning_split", true))
             .build();
+
+    /**
+     * 启动时强制要求关键环境变量齐全，否则后续跑到 BOM 阶段才会报错，
+     * 既难定位，又会白白把首条用户消息写进历史。
+     */
+    private static String requireEnv(String key) {
+        String value = System.getenv(key);
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException("缺少必需的环境变量: " + key);
+        }
+        return value;
+    }
 
     private void run() {
         console.printWelcome();
@@ -128,6 +140,8 @@ public class Codey {
     }
 
     private synchronized AiMessage agentLoop(List<ChatMessage> history, String userInput) {
+        // 在压缩/记忆注入之前先冻结本次会话的原始快照，压缩会改写 history，
+        // 若不预先快照，MemoryManager.extractMemory 会把压缩后的版本误当原始对话。
         List<ChatMessage> preCompact = List.of(history.toArray(ChatMessage[]::new));
         MemoryManager.injectRelevantMemory(history,client);
 

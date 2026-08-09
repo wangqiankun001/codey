@@ -10,15 +10,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vanilla.memory.MemoryManager;
 import com.vanilla.tool.ToolManager;
 
-import cn.hutool.core.util.StrUtil;
-
 public class SystemMessageBuilder {
 
     public static final String WORKSPACE = System.getProperty("user.dir");
-
-    private static String lastContextKey;
-
-    private static String lastPrompt;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -33,18 +27,9 @@ public class SystemMessageBuilder {
     }
 
     public static String getSystemPrompt(Context context) {
-        String key;
-        try {
-            key = MAPPER.writeValueAsString(context);
-        } catch (JsonProcessingException e) {
-            throw new UncheckedIOException("JSON序列化失败",e);
-        }
-        if (StrUtil.equals(lastContextKey, key)){
-
-            return lastPrompt;
-        }
-        lastPrompt = assembleSystemPrompt(context);
-        return lastPrompt;
+        // 不再做全局缓存：原缓存是类级可变状态，子 Agent 与主 Agent 会共享同一个
+        // 缓存键，且非线程安全，会出现 prompt 串号。组装本身开销极低。
+        return assembleSystemPrompt(context);
     }
 
     public static String assembleSystemPrompt(Context context) {

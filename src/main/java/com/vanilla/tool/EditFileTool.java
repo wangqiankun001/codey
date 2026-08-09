@@ -193,6 +193,11 @@ public class EditFileTool implements Tool {
 
     private static String replaceFirst(String text, String target, String replacement) {
         int index = text.indexOf(target);
+        if (index < 0) {
+            // 调用方已通过 countOccurrences 断言至少 1 次匹配；这里只是兜底，
+            // 避免在极端字符比较条件下抛 StringIndexOutOfBoundsException。
+            return text;
+        }
         return text.substring(0, index)
                 + replacement
                 + text.substring(index + target.length());

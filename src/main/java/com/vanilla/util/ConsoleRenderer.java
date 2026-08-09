@@ -460,14 +460,25 @@ public final class ConsoleRenderer {
     }
 
     public void printMessageState(List<ChatMessage> history) {
+        if (history == null || history.isEmpty()) {
+            return;
+        }
         int total = history.stream().mapToInt(this::textLength).sum();
-        int max = history.stream().mapToInt(this::textLength).max().getAsInt();
+        int max = history.stream().mapToInt(this::textLength).max().orElse(0);
         printBox("当前对话存储情况", List.of("总消息数量：" + history.size(), "对话总大小：" + total, "单条最大大小：" + max), BLUE);
     }
 
     public int textLength(ChatMessage message) {
         if (message instanceof UserMessage um) {
-            return um.singleText().length();
+            // 后台任务通知等多 Content 的 UserMessage 没有 singleText()，聚合文本避免抛 IllegalStateException。
+            if (um.hasSingleText()) {
+                return um.singleText() == null ? 0 : um.singleText().length();
+            }
+            return um.contents().stream()
+                    .filter(dev.langchain4j.data.message.TextContent.class::isInstance)
+                    .map(dev.langchain4j.data.message.TextContent.class::cast)
+                    .mapToInt(tc -> tc.text() == null ? 0 : tc.text().length())
+                    .sum();
         } else if (message instanceof AiMessage am) {
             int length = 0;
             if (am.text() != null) {
@@ -483,7 +494,14 @@ public final class ConsoleRenderer {
             }
             return length;
         } else if (message instanceof ToolExecutionResultMessage tu) {
-            return tu.text().length();
+            if (tu.hasSingleText()) {
+                return tu.text() == null ? 0 : tu.text().length();
+            }
+            return tu.contents().stream()
+                    .filter(dev.langchain4j.data.message.TextContent.class::isInstance)
+                    .map(dev.langchain4j.data.message.TextContent.class::cast)
+                    .mapToInt(tc -> tc.text() == null ? 0 : tc.text().length())
+                    .sum();
         }
         return 0;
     }
