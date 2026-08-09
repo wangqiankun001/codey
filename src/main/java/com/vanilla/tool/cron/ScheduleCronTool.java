@@ -24,11 +24,7 @@ import java.util.UUID;
 public class ScheduleCronTool implements Tool {
     static final String NAME = "schedule_cron";
 
-    private static final String DESCRIPTION =
-            "Schedule a recurring or one-shot cron job. The job fires by injecting the given "
-                    + "prompt into the agent at the next matching wall-clock minute. Inputs: "
-                    + "cron (5-field expression, e.g. \"0 9 * * *\"), prompt (text to inject), "
-                    + "recurring (default true; false for one-shot), durable (default false).";
+    private static final String DESCRIPTION = "Schedule a cron job. cron is 5-field: min hour dom month dow.";
 
     @Override
     public ToolSpecification getSpecification() {

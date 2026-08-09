@@ -56,7 +56,7 @@ public class Agent {
         this.history.add(UserMessage.from(task));
     }
 
-    public String run() {
+    public synchronized String run() {
         long startMillis = System.currentTimeMillis();
 
         BudgetMessageCompactor.toolResultBudget(history);

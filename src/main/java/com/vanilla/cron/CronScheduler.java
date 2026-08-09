@@ -51,14 +51,18 @@ public final class CronScheduler {
         while (started) {
             try { scanAndFire(); }
             catch (RuntimeException e) { ConsoleRenderer.getShared().printDebug("[cron]", "scheduler error: " + e.getMessage()); }
-            try { Thread.sleep(10_000L); }
+            try { Thread.sleep(1_000L); }
             catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
         }
     }
 
     private void scanAndFire() {
         Path dir = ScheduleCronTool.cronDir();
-        try { Files.createDirectories(dir); } catch (IOException e) { return; }
+        try {
+            Files.createDirectories(dir);
+        } catch (IOException e) {
+            return;
+        }
         Set<String> present = new HashSet<>();
         try (var files = Files.list(dir)) {
             files.filter(p -> p.getFileName().toString().endsWith(".json")).forEach(path -> {
@@ -67,7 +71,9 @@ public final class CronScheduler {
                 try {
                     CronEntry entry = mapper.readValue(path.toFile(), CronEntry.class);
                     entry.setId(id);
-                    synchronized (this) { entries.put(id, entry); }
+                    synchronized (this) {
+                        entries.put(id, entry);
+                    }
                     String marker = LocalDateTime.now().format(MARKER);
                     if (CronMatcher.matches(entry.getCron(), LocalDateTime.now())
                             && !marker.equals(entry.getLastRunMarker())) {
@@ -75,16 +81,24 @@ public final class CronScheduler {
                         due.offer(entry);
                         ConsoleRenderer.getShared().printDebug("[cron fire]", id + " -> " + entry.getPrompt());
                         if (!entry.isRecurring()) {
-                            synchronized (this) { entries.remove(id); }
-                            try { Files.deleteIfExists(path); } catch (IOException ignored) {}
+                            synchronized (this) {
+                                entries.remove(id);
+                            }
+                            try {
+                                Files.deleteIfExists(path);
+                            } catch (IOException ignored) {
+                            }
                         }
                     }
                 } catch (Exception e) {
                     ConsoleRenderer.getShared().printDebug("[cron error]", id + ": " + e.getMessage());
                 }
             });
-        } catch (IOException ignored) {}
-        synchronized (this) { entries.keySet().removeIf(id -> !present.contains(id)); }
+        } catch (IOException ignored) {
+        }
+        synchronized (this) {
+            entries.keySet().removeIf(id -> !present.contains(id));
+        }
     }
 
     public synchronized boolean cancel(String id) {
