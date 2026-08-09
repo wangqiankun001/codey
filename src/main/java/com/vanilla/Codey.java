@@ -41,7 +41,6 @@ import org.jline.terminal.TerminalBuilder;
 
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
-import dev.langchain4j.data.message.Content;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
@@ -128,7 +127,7 @@ public class Codey {
         }
     }
 
-    private AiMessage agentLoop(List<ChatMessage> history, String userInput) {
+    private synchronized AiMessage agentLoop(List<ChatMessage> history, String userInput) {
         List<ChatMessage> preCompact = List.of(history.toArray(ChatMessage[]::new));
         MemoryManager.injectRelevantMemory(history,client);
 
@@ -218,20 +217,24 @@ public class Codey {
             if(result == null || result.isEmpty()){
                 continue;
             }
-            List<Content> contents = result.stream().filter(BackgroundTask.class::isInstance).map(BackgroundTask.class::cast).map(r->{
-                                    return (Content)TextContent.from(
-                                       String.format(
-                                         """
-                                        <task_notification>
-                                          <task_id>%s</task_id>
-                                          <status>completed</status>
-                                          <command>%s</command>
-                                          <result>%s</result>
-                                        </task_notification>"
-                                        """, r.getTaskId(),r.getCommand(),r.getResult())
-                                    );
-                                }).toList();
-            history.add(UserMessage.builder().contents(contents).build());
+            // 多个后台任务完成通知需要合并到一个 TextContent 里,否则后续
+            // MemoryManager/ConsoleRenderer 等调用 singleText() 会抛
+            // "Expecting single text content" 异常,且 langchain4j 的 OpenAI
+            // 实现对多 Content 的 UserMessage 行为也不一致。
+            String combined = result.stream()
+                    .filter(BackgroundTask.class::isInstance)
+                    .map(BackgroundTask.class::cast)
+                    .map(r -> String.format(
+                            """
+                            <task_notification>
+                              <task_id>%s</task_id>
+                              <status>completed</status>
+                              <command>%s</command>
+                              <result>%s</result>
+                            </task_notification>
+                            """, r.getTaskId(), r.getCommand(), r.getResult()))
+                    .collect(Collectors.joining("\n"));
+            history.add(UserMessage.from(combined));
         }
     }
 

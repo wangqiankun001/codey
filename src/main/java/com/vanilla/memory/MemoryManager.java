@@ -291,6 +291,15 @@ public class MemoryManager {
         }
         var catalog = stringBuilder.toString();
         var lastUserMessage = UserMessage.findLast(history).get();
+        // 后台任务通知等多 Content 的 UserMessage 没有 singleText();这里把
+        // 所有文本片段拼起来,避免抛 "Expecting single text content"。
+        String recentText = lastUserMessage.hasSingleText()
+                ? lastUserMessage.singleText()
+                : lastUserMessage.contents().stream()
+                        .filter(dev.langchain4j.data.message.TextContent.class::isInstance)
+                        .map(dev.langchain4j.data.message.TextContent.class::cast)
+                        .map(dev.langchain4j.data.message.TextContent::text)
+                        .collect(Collectors.joining("\n"));
         String prompt = String.format("""
                 Given the recent conversation and the memory catalog below,
                 select the indices of memories that are clearly relevant.
@@ -301,7 +310,7 @@ public class MemoryManager {
                 %s
                 Memory catalog:
                 %s
-                """, lastUserMessage.singleText(), catalog);
+                """, recentText, catalog);
         String relevantIdx = client.chat(prompt);
         if (StrUtil.isBlank(relevantIdx)) {
             return;
