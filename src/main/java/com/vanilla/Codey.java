@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import com.vanilla.backgroundtask.BackgroundTaskUtil;
+import com.vanilla.backgroundtask.BackgroundTaskUtil.BackgroundTask;
 import com.vanilla.compactor.BudgetMessageCompactor;
 import com.vanilla.compactor.LLMMessageCompactor;
 import com.vanilla.compactor.MicoMessageCompactor;
@@ -27,8 +29,8 @@ import com.vanilla.tool.ToolManager;
 import com.vanilla.util.ChatMessageJsonConvertor;
 import com.vanilla.util.ConsoleRenderer;
 
-import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONUtil;
 
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.LineReader;
@@ -39,7 +41,9 @@ import org.jline.terminal.TerminalBuilder;
 
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.Content;
 import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.request.ChatRequest;
@@ -181,22 +185,53 @@ public class Codey {
                 }
 
                 console.printToolCall(toolExeReq.name(), toolExeReq.arguments());
-                long startMillis = System.currentTimeMillis();
-                String toolResult;
-                try {
-                    toolResult = tool.execute(toolExeReq);
-                } catch (RuntimeException e) {
-                    toolResult = "Error: tool execution failed: " + readableError(e,history);
+
+                if (BackgroundTaskUtil.shouldRunBackground(toolExeReq)) {
+                    String backgroundTaskId = BackgroundTaskUtil.startBackgroundTask(toolExeReq);
+                    history.add(ToolExecutionResultMessage.from(toolExeReq, backgroundTaskId).toBuilder()
+                            .contents(TextContent.from(String.format("""
+                                    [Background task %s started]
+                                    Command: %s.
+                                    Result will be available when complete.
+                                    """, backgroundTaskId,
+                                    JSONUtil.parseObj(toolExeReq.arguments()).getStr("command"))))
+                            .build());
+                } else {
+                    long startMillis = System.currentTimeMillis();
+                    String toolResult;
+                    try {
+                        toolResult = tool.execute(toolExeReq);
+                    } catch (RuntimeException e) {
+                        toolResult = "Error: tool execution failed: " + readableError(e, history);
+                    }
+                    long elapsedMillis = System.currentTimeMillis() - startMillis;
+                    boolean success = toolResult != null && !toolResult.startsWith("Error:");
+                    console.printToolResult(toolExeReq.name(), toolResult, elapsedMillis, success);
+                    console.printMessageState(history);
+                    history.add(ToolExecutionResultMessage.from(toolExeReq, toolResult));
                 }
-                long elapsedMillis = System.currentTimeMillis() - startMillis;
-                boolean success = toolResult != null && !toolResult.startsWith("Error:");
-                console.printToolResult(toolExeReq.name(), toolResult, elapsedMillis, success);
-                console.printMessageState(history);
-                history.add(ToolExecutionResultMessage.from(toolExeReq, toolResult));
                 if (!TodoWriteTool.getTodos().isEmpty()) {
                     console.printTodos(TodoWriteTool.getTodos());
                 }
             });
+            List<Object> result = BackgroundTaskUtil.collectBackgroundTaskResult();
+            if(result == null || result.isEmpty()){
+                continue;
+            }
+            List<Content> contents = result.stream().filter(BackgroundTask.class::isInstance).map(BackgroundTask.class::cast).map(r->{
+                                    return (Content)TextContent.from(
+                                       String.format(
+                                         """
+                                        <task_notification>
+                                          <task_id>%s</task_id>
+                                          <status>completed</status>
+                                          <command>%s</command>
+                                          <result>%s</result>
+                                        </task_notification>"
+                                        """, r.getTaskId(),r.getCommand(),r.getResult())
+                                    );
+                                }).toList();
+            history.add(UserMessage.builder().contents(contents).build());
         }
     }
 

@@ -22,6 +22,8 @@ import java.util.concurrent.TimeUnit;
 
 public class BashTool implements Tool {
 
+    public static final String NAME = "bash";
+
     private static final long DEFAULT_COMMAND_TIMEOUT_SECONDS = 120;
 
     /** Whether the current JVM is running on Windows. */
@@ -71,7 +73,7 @@ public class BashTool implements Tool {
                         + "sh. Honors the optional 'shell', 'cwd' and 'timeout_seconds' parameters.";
 
         return ToolSpecification.builder()
-                .name("bash")
+                .name(NAME)
                 .description(description)
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("command", "The shell command to execute.")
