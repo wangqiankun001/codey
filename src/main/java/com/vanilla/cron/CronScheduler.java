@@ -88,6 +88,8 @@ public final class CronScheduler {
                                 Files.deleteIfExists(path);
                             } catch (IOException ignored) {
                             }
+                        } else {
+                            mapper.writeValue(path.toFile(), entry);
                         }
                     }
                 } catch (Exception e) {

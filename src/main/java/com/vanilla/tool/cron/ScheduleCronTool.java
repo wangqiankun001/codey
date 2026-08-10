@@ -77,9 +77,7 @@ public class ScheduleCronTool implements Tool {
             return "Error: failed to persist cron job: " + e.getMessage();
         }
 
-        // Make the freshly-written file visible to the scheduler right away
-        // instead of waiting for the next 10-second scan tick.
-        CronScheduler.getInstance().runScan();
+        // CronScheduler.getInstance().runScan();
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("scheduled", true);
