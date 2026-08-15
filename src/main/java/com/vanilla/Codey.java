@@ -8,12 +8,14 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.stream.Collectors;
 
+import com.vanilla.backgroundtask.BackgroundTask;
 import com.vanilla.backgroundtask.BackgroundTaskUtil;
 import com.vanilla.cron.CronMessageScheduler;
 import com.vanilla.cron.CronScheduler;
-import com.vanilla.backgroundtask.BackgroundTaskUtil.BackgroundTask;
 import com.vanilla.compactor.BudgetMessageCompactor;
 import com.vanilla.compactor.LLMMessageCompactor;
 import com.vanilla.compactor.MicoMessageCompactor;
@@ -23,6 +25,8 @@ import com.vanilla.hook.HookContext;
 import com.vanilla.hook.HookDispatcher;
 import com.vanilla.hook.HookEvent;
 import com.vanilla.hook.HookResult;
+import com.vanilla.inbox.AgentMessage;
+import com.vanilla.inbox.MessageBus;
 import com.vanilla.memory.MemoryManager;
 import com.vanilla.prompt.SystemMessageBuilder;
 import com.vanilla.tool.TodoWriteTool;
@@ -63,6 +67,13 @@ public class Codey {
     private final int MAX_REACTIVE_RETRIES = 3;
     private final Terminal terminal;
     private final LineReader lineReader;
+    private final Thread inputReaderThread;
+    private final Thread inboxPoller;
+    private final BlockingQueue<Event> events = new LinkedBlockingQueue<>();
+
+
+    private static record Event(String kind,String payload) {
+    }
 
     public Codey() {
         // 让子 Agent 等没有直接持有 console 的组件也能拿到同一个渲染器。
@@ -75,6 +86,12 @@ public class Codey {
         } catch (IOException e) {
             throw new IllegalStateException("无法初始化终端输入", e);
         }
+        inputReaderThread = new Thread(() -> readInput(),"user-input-reader");
+        inputReaderThread.setDaemon(true);
+        inputReaderThread.start();
+        inboxPoller = new Thread(() -> pollInbox(),"inbox-message-poller");
+        inboxPoller.setDaemon(true);
+        inboxPoller.start();
     }
 
     private final OpenAiChatModel client = OpenAiChatModel.builder()
@@ -97,38 +114,76 @@ public class Codey {
         return value;
     }
 
+    private void readInput() {
+        while (true) {
+            String input;
+            try {
+                input = lineReader.readLine(console.promptText());
+            } catch (UserInterruptException e) {
+                lineReader.getBuffer().clear();
+                continue;
+            } catch (EndOfFileException e) {
+                console.printGoodbye();
+                events.offer(new Event("quit", null));
+                return;
+            }
+            if (StrUtil.isBlankIfStr(input)) {
+                continue;
+            }
+            events.offer(new Event("user", input));
+        }
+    }
+
+    private void pollInbox(){
+        while (true) {
+            if (MessageBus.getInstance().peek("lead") || BackgroundTaskUtil.hasCompleted()) {
+                events.offer(new Event("wake", null));
+            }
+            try {
+				Thread.sleep(1000);
+			} catch (InterruptedException e) {
+			}
+        }
+    }
+
     private void run() {
         console.printWelcome();
         history.add(SystemMessage.from(SystemMessageBuilder.getSystemPrompt()));
 
         try {
             while (true) {
-                String input;
-                try {
-                    input = lineReader.readLine(console.promptText());
-                } catch (UserInterruptException e) {
-                    lineReader.getBuffer().clear();
-                    continue;
-                } catch (EndOfFileException e) {
-                    console.printGoodbye();
+                Event event;
+				try {
+					event = events.take();
+				} catch (InterruptedException e) {
                     return;
-                }
+				}
+                String kind = event.kind().strip();
 
-                if ("exit".equals(input.strip())) {
+                if ("exit".equals(kind)) {
                     console.printGoodbye();
                     return;
-                } else if (StrUtil.isBlankIfStr(input)) {
-                    continue;
+                } else if("user".equals(kind)) {
+                    history.add(UserMessage.from(event.payload()));
+                } else if ("wake".equals(kind)) {
+                    List<String> messageAndTaskResult = new ArrayList<>();
+                    List<AgentMessage> inbox = MessageBus.getInstance().readInbox("lead");
+                    messageAndTaskResult.addAll(inbox.stream().map(message -> {
+                        return String.format("""
+                                [Inbox]
+                                From %s: %s
+                                """, message.fromAgent(), message.content());
+                    }).toList());
+                    messageAndTaskResult.addAll(BackgroundTaskUtil.collectBackgroundTaskResultStr());
+                    history.add(UserMessage.from(messageAndTaskResult.stream().collect(Collectors.joining("\n"))));
                 }
-                HookResult hookResult = HookDispatcher.dispatch(HookEvent.UserPromptSubmit, HookContext.from(input));
+                HookResult hookResult = HookDispatcher.dispatch(HookEvent.UserPromptSubmit, HookContext.from(event.payload()));
                 if (!hookResult.continueRun()) {
                     console.printWarning(hookResult.getMsg());
                 }
-                history.add(UserMessage.from(input));
                 console.printThinking();
-
                 try {
-                    AiMessage answer = this.agentLoop(history, input);
+                    AiMessage answer = this.agentLoop(history, event.payload());
                     if (answer != null) console.printAiMessage(answer.text());
                 } catch (RuntimeException e) {
                     console.printError(readableError(e,history));
@@ -231,7 +286,7 @@ public class Codey {
                     console.printTodos(TodoWriteTool.getTodos());
                 }
             });
-            List<Object> result = BackgroundTaskUtil.collectBackgroundTaskResult();
+            List<BackgroundTask> result = BackgroundTaskUtil.collectBackgroundTaskResult();
             if(result == null || result.isEmpty()){
                 continue;
             }

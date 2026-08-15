@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.vanilla.tool.BashTool;
@@ -65,66 +66,25 @@ public class BackgroundTaskUtil {
         return slowKeywords.stream().anyMatch(command::contains);
     }
 
-    public static class BackgroundTask {
 
-        private String taskId;
-        private String command;
-        private BackgroundTaskStatus status;
-        private Object Result;
-
-        public BackgroundTask(String taskId, String command, BackgroundTaskStatus status, Object result) {
-            this.taskId = taskId;
-            this.command = command;
-            this.status = status;
-            Result = result;
-        }
-
-        public String getCommand() {
-            return command;
-        }
-
-        public void setCommand(String command) {
-            this.command = command;
-        }
-        public String getTaskId() {
-            return taskId;
-        }
-        public void setTaskId(String taskId) {
-            this.taskId = taskId;
-        }
-        public BackgroundTaskStatus getStatus() {
-            return status;
-        }
-
-        public BackgroundTask setStatus(BackgroundTaskStatus status) {
-            this.status = status;
-            return this;
-        }
-
-        public Object getResult() {
-            return Result;
-        }
-
-        public BackgroundTask setResult(Object result) {
-            Result = result;
-            return this;
-        }
-
+    public static synchronized List<String> collectBackgroundTaskResultStr() {
+        return collectBackgroundTaskResult().stream()
+                .filter(BackgroundTask.class::isInstance)
+                .map(BackgroundTask.class::cast)
+                .map(r -> String.format(
+                        """
+                        <task_notification>
+                        <task_id>%s</task_id>
+                        <status>completed</status>
+                        <command>%s</command>
+                        <result>%s</result>
+                        </task_notification>
+                        """, r.getTaskId(), r.getCommand(), r.getResult()))
+                .collect(Collectors.toList());
     }
 
-    private static enum BackgroundTaskStatus {
-        INIT("init"), IN_PROGRESS("in_progress"), COMPLETED("completed"), STOP("stop");
 
-        @JsonValue
-        private String value;
-
-        private BackgroundTaskStatus(String value) {
-            this.value = value;
-        }
-
-    }
-
-    public static synchronized List<Object> collectBackgroundTaskResult() {
+    public static synchronized List<BackgroundTask> collectBackgroundTaskResult() {
         Map<String, BackgroundTask> completes = new HashMap<>();
         tasks.forEach((k, v) -> {
             if (v.getStatus() == BackgroundTaskStatus.COMPLETED) {
@@ -133,5 +93,9 @@ public class BackgroundTaskUtil {
         });
         completes.keySet().forEach(k -> tasks.remove(k));
         return new ArrayList<>(completes.values());
+    }
+
+    public static boolean hasCompleted() {
+        return tasks.values().stream().anyMatch(task -> task.getStatus() == BackgroundTaskStatus.COMPLETED);
     }
 }
