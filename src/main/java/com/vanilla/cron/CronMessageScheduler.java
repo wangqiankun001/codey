@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import com.vanilla.Agent;
+import com.vanilla.agent.SubAgent;
 import com.vanilla.util.ConsoleRenderer;
 
 /**
@@ -57,7 +57,7 @@ public final class CronMessageScheduler {
                 ConsoleRenderer.getShared().printDebug("处理定时任务：" + cronPrompt.singleText());
                 executorService.execute(() -> {
                     if (cronPrompt.hasSingleText()) {
-                        new Agent(cronPrompt.singleText()).run();
+                        new SubAgent(cronPrompt.singleText()).run();
                     }
                 });
             }

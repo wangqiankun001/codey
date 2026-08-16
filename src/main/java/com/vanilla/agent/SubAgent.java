@@ -1,4 +1,4 @@
-package com.vanilla;
+package com.vanilla.agent;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,7 +29,7 @@ import dev.langchain4j.model.output.FinishReason;
 /**
  * 子 Agent 的一次性执行环境：持有任务描述、对话历史和模型客户端。
  */
-public class Agent {
+public class SubAgent {
 
     private static final int MAX_CALL = 30;
 
@@ -45,11 +45,11 @@ public class Agent {
             .customParameters(Map.of("reasoning_split", true))
             .build();
 
-    public Agent(String task) {
+    public SubAgent(String task) {
         this(task, ConsoleRenderer.getShared());
     }
 
-    public Agent(String task, ConsoleRenderer console) {
+    public SubAgent(String task, ConsoleRenderer console) {
         this.task = task;
         this.console = console;
         this.history = new ArrayList<>();

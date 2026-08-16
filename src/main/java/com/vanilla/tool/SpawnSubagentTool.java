@@ -5,13 +5,14 @@ import cn.hutool.json.JSONUtil;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
-import com.vanilla.Agent;
+
+import com.vanilla.agent.SubAgent;
 import com.vanilla.util.ConsoleRenderer;
 
 /**
  * 启动一个独立的子 Agent 来处理复杂子任务。
  *
- * <p>子 Agent 拥有自己的对话历史和模型调用循环，最多重试 {@link Agent#MAX_CALL} 轮；
+ * <p>子 Agent 拥有自己的对话历史和模型调用循环，最多重试 {@link SubAgent#MAX_CALL} 轮；
  * 当模型返回的 {@code finishReason} 不再是 {@code TOOL_EXECUTION} 时，把最终文本作为
  * 工具结果回传给主 Agent。本工具不会把子 Agent 的中间过程暴露给主 Agent，
  * 但会通过共享的 {@link ConsoleRenderer} 在终端上完整渲染：开始卡片、每一轮进度、
@@ -54,7 +55,7 @@ public class SpawnSubagentTool implements Tool {
         }
 
         try {
-            return new Agent(task).run();
+            return new SubAgent(task).run();
         } catch (RuntimeException e) {
             String message = "subagent failed: " + safeMessage(e);
             ConsoleRenderer.getShared().printError(message);
