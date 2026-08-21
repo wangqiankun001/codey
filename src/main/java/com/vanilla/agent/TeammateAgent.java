@@ -8,6 +8,7 @@ import java.util.Map;
 import com.vanilla.inbox.AgentMsgType;
 import com.vanilla.inbox.MessageBus;
 import com.vanilla.tool.BashTool;
+import com.vanilla.tool.EditFileTool;
 import com.vanilla.tool.ReadFileTool;
 import com.vanilla.tool.SendMessageToTeammateTool;
 import com.vanilla.tool.Tool;
@@ -66,6 +67,7 @@ public class TeammateAgent extends Thread {
         tools.add(new BashTool());
         tools.add(new ReadFileTool());
         tools.add(new WriteFileTool());
+        tools.add(new EditFileTool());
         tools.add(new SendMessageToTeammateTool());
         tools.addAll(List.of(extraTools));
         toolSpecifications.addAll(this.tools.stream().map(Tool::getSpecification).toList());

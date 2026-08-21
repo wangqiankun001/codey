@@ -37,6 +37,8 @@ public class ToolManager {
         register(new CancelCronTool());
         register(new ListCronsTool());
         register(new CronStatusTool());
+        register(new CheckInboxTool());
+        register(new SpawnTeammateTool());
     }
 
     public static void register(Tool tool) {

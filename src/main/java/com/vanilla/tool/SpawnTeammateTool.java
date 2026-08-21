@@ -22,7 +22,7 @@ public class SpawnTeammateTool implements Tool {
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("name")
                         .addStringProperty("role")
-                        .addBooleanProperty("prompt")
+                        .addStringProperty("prompt")
                         .required("name", "role", "prompt")
                         .build())
                 .build();
