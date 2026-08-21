@@ -1,11 +1,15 @@
 package com.vanilla.tool;
 
+import com.vanilla.inbox.AgentMessage;
+import java.util.List;
+import java.util.stream.Collectors;
+
 import com.vanilla.inbox.MessageBus;
+import com.vanilla.util.ConsoleRenderer;
 
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
-import dev.langchain4j.model.openai.internal.chat.Message;
 
 public class CheckInboxTool implements Tool {
 
@@ -20,10 +24,17 @@ public class CheckInboxTool implements Tool {
 
     @Override
     public String execute(ToolExecutionRequest request) {
-       if (MessageBus.getInstance().peek("lead")) {
-            MessageBus.getInstance().readInbox("lead").stream().map(message->{
-            });
-       }
+        ConsoleRenderer.getShared().printDebug("检查信箱");
+        if (MessageBus.getInstance().peek("lead")) {
+            List<AgentMessage> inbox = MessageBus.getInstance().readInbox("lead");
+            if (inbox == null || inbox.size() == 0) {
+                return "(inbox empty)";
+            }
+            return inbox.stream().map(m -> {
+                return String.format("[%s] %s", m.fromAgent(), m.content());
+            }).collect(Collectors.joining(System.lineSeparator()));
+        }
+        return "(inbox empty)";
     }
 
 }

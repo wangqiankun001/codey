@@ -26,7 +26,8 @@ import java.nio.file.StandardOpenOption;
  *   <li>拒绝空 {@code old_string}(否则会撑爆文件);</li>
  *   <li>{@code replace_all=false} 时要求恰好 1 处匹配;</li>
  *   <li>限制替换后文件体积,防止误改/注入造成的资源耗尽;</li>
- *   <li>通过临时文件 + 原子 rename 写入,保证文件不会被写到一半。</li>
+ *   <li>通过临时文件 + 原子 rename 写入,保证文件不会被写到一半;
+ *       写入完成后对父目录 fsync,降低崩溃时丢文件的概率。</li>
  * </ul>
  */
 public class EditFileTool implements Tool {
@@ -70,37 +71,25 @@ public class EditFileTool implements Tool {
             return "Error: invalid tool arguments: " + safeMessage(e);
         }
 
-        String pathArgument = arguments.getStr("path");
-        if (pathArgument == null || pathArgument.isBlank()) {
-            pathArgument = arguments.getStr("file_path");
-        }
-        if (pathArgument == null || pathArgument.isBlank()) {
+        String pathArgument = getStringArg(arguments, "path", "file_path");
+        if (pathArgument.isEmpty()) {
             return "Error: path cannot be empty.";
         }
 
-        String oldString = arguments.getStr("old_string");
-        if (oldString == null) {
-            oldString = arguments.getStr("oldString");
-        }
-        if (oldString == null || oldString.isEmpty()) {
+        String oldString = getStringArg(arguments, "old_string", "oldString");
+        if (oldString.isEmpty()) {
             // String.replace("", anything) 会在每个字符间隙插入内容,
             // 直接拒绝是杜绝 DoS 唯一可靠的方式。
             return "Error: old_string cannot be empty.";
         }
 
         // 空字符串是合法的替换内容,因此只判断 null,不判断 isBlank()。
-        String newString = arguments.getStr("new_string");
-        if (newString == null) {
-            newString = arguments.getStr("newString");
-        }
+        String newString = getStringArg(arguments, "new_string", "newString");
         if (newString == null) {
             return "Error: new_string cannot be null.";
         }
 
-        boolean replaceAll = Boolean.TRUE.equals(arguments.getBool("replace_all"));
-        if (!replaceAll) {
-            replaceAll = Boolean.TRUE.equals(arguments.getBool("replaceAll"));
-        }
+        boolean replaceAll = getBoolArg(arguments, "replace_all", "replaceAll");
 
         final Path path;
         try {
@@ -118,10 +107,14 @@ public class EditFileTool implements Tool {
             }
 
             String original = Files.readString(path, StandardCharsets.UTF_8);
-            int occurrences = countOccurrences(original, oldString);
-            if (occurrences == 0) {
+            // 用 stat 取原文件字节数,避免再次把原文按 UTF-8 编码一遍。
+            long originalBytes = Files.size(path);
+
+            int firstIndex = original.indexOf(oldString);
+            if (firstIndex < 0) {
                 return "Error: old_string was not found in file: " + path;
             }
+            int occurrences = countOccurrencesFrom(original, oldString, firstIndex);
             if (!replaceAll && occurrences > 1) {
                 return "Error: old_string occurs " + occurrences
                         + " times; set replace_all to true or provide a more specific old_string.";
@@ -129,12 +122,12 @@ public class EditFileTool implements Tool {
 
             String updated = replaceAll
                     ? original.replace(oldString, newString)
-                    : replaceFirst(original, oldString, newString);
+                    : replaceFirst(original, oldString, newString, firstIndex);
 
             // 字节膨胀护栏:同时检查绝对上限与倍率上限。绝对上限优先,
             // 因为它独立于原文件大小,能兜底任何倍率检查漏掉的情况。
-            long originalBytes = original.getBytes(StandardCharsets.UTF_8).length;
-            long updatedBytes = updated.getBytes(StandardCharsets.UTF_8).length;
+            // 这里手算字节数而不分配 byte[],省下接近结果大小的内存。
+            long updatedBytes = utf8ByteLength(updated);
             long effectiveCap = overrideMaxResultBytes > 0 ? overrideMaxResultBytes : MAX_RESULT_BYTES;
             if (updatedBytes > effectiveCap) {
                 return "Error: resulting file would be " + updatedBytes
@@ -147,26 +140,26 @@ public class EditFileTool implements Tool {
             }
 
             // 原子写入:写到同目录临时文件,fsync 后 ATOMIC_MOVE 覆盖目标。
-            // 出现任何异常都不会污染原文件。
+            // move 成功后对父目录再 force 一次,确保目录条目也落盘,
+            // 防止断电时新文件名丢了但内容还在。出现任何异常都不会污染原文件。
             Path parent = path.getParent();
             Path temp = Files.createTempFile(parent, "edit_file_", ".tmp");
             try {
-                Files.writeString(temp, updated, StandardCharsets.UTF_8,
-                        StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
-                // 确保数据落盘后再替换,降低崩溃时丢文件的概率。
-                try (FileChannel channel = FileChannel.open(temp, StandardOpenOption.READ)) {
+                Files.writeString(temp, updated, StandardCharsets.UTF_8);
+                try (FileChannel channel = FileChannel.open(temp, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
                     channel.force(true);
                 }
                 Files.move(temp, path,
                         StandardCopyOption.REPLACE_EXISTING,
                         StandardCopyOption.ATOMIC_MOVE);
+                forceDirectory(parent);
             } finally {
                 Files.deleteIfExists(temp);
             }
 
-            int firstLine = firstMatchLine(original, oldString);
-            long originalNewBytes = newString.getBytes(StandardCharsets.UTF_8).length;
-            long originalOldBytes = oldString.getBytes(StandardCharsets.UTF_8).length;
+            int firstLine = lineOfIndex(original, firstIndex);
+            long originalNewBytes = utf8ByteLength(newString);
+            long originalOldBytes = utf8ByteLength(oldString);
             long delta = (originalNewBytes - originalOldBytes) * occurrences;
 
             return "Successfully replaced " + occurrences + " occurrence"
@@ -181,34 +174,32 @@ public class EditFileTool implements Tool {
         }
     }
 
-    private static int countOccurrences(String text, String target) {
+    /** 从 {@code fromIndex} 起统计 {@code target} 在 {@code text} 中出现的次数。 */
+    private static int countOccurrencesFrom(String text, String target, int fromIndex) {
         int count = 0;
-        int fromIndex = 0;
-        while ((fromIndex = text.indexOf(target, fromIndex)) >= 0) {
+        int idx = fromIndex;
+        while ((idx = text.indexOf(target, idx)) >= 0) {
             count++;
-            fromIndex += target.length();
+            idx += target.length();
         }
         return count;
     }
 
-    private static String replaceFirst(String text, String target, String replacement) {
-        int index = text.indexOf(target);
+    private static String replaceFirst(String text, String target, String replacement, int index) {
         if (index < 0) {
-            // 调用方已通过 countOccurrences 断言至少 1 次匹配；这里只是兜底，
+            // 调用方已通过 countOccurrences 断言至少 1 次匹配;这里只是兜底,
             // 避免在极端字符比较条件下抛 StringIndexOutOfBoundsException。
             return text;
         }
-        return text.substring(0, index)
-                + replacement
-                + text.substring(index + target.length());
+        return new StringBuilder(text.length() + replacement.length() - target.length())
+                .append(text, 0, index)
+                .append(replacement)
+                .append(text, index + target.length(), text.length())
+                .toString();
     }
 
-    /** 计算第一个匹配所在的 1-based 行号。 */
-    private static int firstMatchLine(String text, String target) {
-        int index = text.indexOf(target);
-        if (index < 0) {
-            return -1;
-        }
+    /** 计算字符索引 {@code index} 所在的 1-based 行号。 */
+    private static int lineOfIndex(String text, int index) {
         int line = 1;
         for (int i = 0; i < index; i++) {
             if (text.charAt(i) == '\n') {
@@ -226,8 +217,69 @@ public class EditFileTool implements Tool {
         return path.normalize();
     }
 
+    /**
+     * 读取字符串参数,兼容 snake_case / camelCase 两种命名。
+     * 所有键都为 null 时返回 {@code null};否则返回首个非 null 值。
+     */
+    private static String getStringArg(JSONObject arguments, String... keys) {
+        for (String key : keys) {
+            String value = arguments.getStr(key);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static boolean getBoolArg(JSONObject arguments, String... keys) {
+        for (String key : keys) {
+            Boolean value = arguments.getBool(key);
+            if (value != null) {
+                return value;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 尝试对目录做 fsync,确保目录条目(包含子文件/子目录名)落盘。
+     * 某些 JVM/文件系统不支持目录 fsync(如 FAT32),此时静默降级。
+     */
+    private static void forceDirectory(Path directory) {
+        if (directory == null) {
+            return;
+        }
+        try (FileChannel channel = FileChannel.open(directory, StandardOpenOption.READ)) {
+            channel.force(true);
+        } catch (UnsupportedOperationException | IOException ignored) {
+            // 不支持目录 fsync 的平台或文件系统,跳过即可。
+        }
+    }
+
     private static String safeMessage(Exception exception) {
         String message = exception.getMessage();
         return message == null || message.isBlank() ? exception.getClass().getSimpleName() : message;
+    }
+
+    /** 计算 String 按 UTF-8 编码后的字节数,不分配中间 byte[]。 */
+    private static long utf8ByteLength(String text) {
+        long count = 0;
+        int n = text.length();
+        for (int i = 0; i < n; i++) {
+            char c = text.charAt(i);
+            if (c < 0x80) {
+                count += 1;
+            } else if (c < 0x800) {
+                count += 2;
+            } else if (Character.isHighSurrogate(c) && i + 1 < n
+                    && Character.isLowSurrogate(text.charAt(i + 1))) {
+                // 高代理 + 低代理 → 4 字节;同时吃掉低代理,避免被单独算成 3 字节。
+                count += 4;
+                i++;
+            } else {
+                count += 3;
+            }
+        }
+        return count;
     }
 }

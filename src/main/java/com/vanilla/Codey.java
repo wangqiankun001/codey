@@ -67,7 +67,7 @@ public class Codey {
     private final int MAX_REACTIVE_RETRIES = 3;
     private final Terminal terminal;
     private final LineReader lineReader;
-    private final Thread inputReaderThread;
+    private final Thread inputReader;
     private final Thread inboxPoller;
     private final BlockingQueue<Event> events = new LinkedBlockingQueue<>();
 
@@ -86,9 +86,9 @@ public class Codey {
         } catch (IOException e) {
             throw new IllegalStateException("无法初始化终端输入", e);
         }
-        inputReaderThread = new Thread(() -> readInput(),"user-input-reader");
-        inputReaderThread.setDaemon(true);
-        inputReaderThread.start();
+        inputReader = new Thread(() -> readInput(),"user-input-reader");
+        inputReader.setDaemon(true);
+        inputReader.start();
         inboxPoller = new Thread(() -> pollInbox(),"inbox-message-poller");
         inboxPoller.setDaemon(true);
         inboxPoller.start();
@@ -164,6 +164,9 @@ public class Codey {
                     console.printGoodbye();
                     return;
                 } else if("user".equals(kind)) {
+                    if(event == null || event.payload().isBlank()){
+                        throw new IllegalArgumentException("输入内容不能为空");
+                    }
                     history.add(UserMessage.from(event.payload()));
                 } else if ("wake".equals(kind)) {
                     List<String> messageAndTaskResult = new ArrayList<>();
